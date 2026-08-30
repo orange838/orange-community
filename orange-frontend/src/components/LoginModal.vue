@@ -1,7 +1,7 @@
 <template>
   <div class="modal-overlay" @click.self="handleClose">
     <div class="modal-content">
-      <h2 class="modal-title">{{ isLogin ? '欢迎登录' : '注册账号' }}</h2>
+      <h2 class="modal-title">{{ isLogin ? '欢迎回来' : '注册账号' }}</h2>
 
       <form class="login-form" @submit.prevent="handleSubmit">
         
@@ -16,6 +16,7 @@
           <div v-if="loginMethod === 'password'">
             <div class="form-item">
               <label>账号/邮箱</label>
+              <!-- 注意这里绑定的是 account -->
               <input type="text" placeholder="请输入用户名或邮箱" v-model="formData.account" />
             </div>
             <div class="form-item">
@@ -28,6 +29,7 @@
           <div v-else>
             <div class="form-item">
               <label>邮箱</label>
+              <!-- 注意这里绑定的是 email -->
               <input type="email" placeholder="请输入邮箱" v-model="formData.email" />
             </div>
             <div class="form-item code-item">
@@ -56,7 +58,6 @@
             <label>密码</label>
             <input type="password" placeholder="请输入密码" v-model="formData.password" />
           </div>
-          <!-- 确认密码 -->
           <div class="form-item">
             <label>确认密码</label>
             <input type="password" placeholder="请再次输入密码" v-model="formData.confirmPassword" />
@@ -72,7 +73,7 @@
           </div>
         </template>
 
-        <!-- Turnstile 人机验证（登录和注册都强制显示） -->
+        <!-- Turnstile 人机验证 -->
         <div class="form-item turnstile-item">
           <label>人机验证</label>
           <div v-if="isLogin" ref="turnstileContainerLogin"></div>
@@ -94,36 +95,25 @@
       <div class="close-btn" @click="handleClose">×</div>
     </div>
   </div>
-
-  <!-- Toast 提示组件 -->
-  <Teleport to="body">
-    <transition name="toast-fade">
-      <div v-if="toastVisible" class="toast-container">
-        <div class="toast-box">
-          <span class="toast-icon">{{ toastType === 'success' ? '✅' : '❌' }}</span>
-          <span class="toast-msg">{{ toastMsg }}</span>
-        </div>
-      </div>
-    </transition>
-  </Teleport>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
-// 【新增】引入状态仓库
-import { currentUser } from '../store'
+import { currentUser } from '../store' 
 
 const props = defineProps({ isLogin: { type: Boolean, default: true } })
 const emit = defineEmits(['close', 'update:isLogin'])
 
+// 统一表单数据对象
 const formData = reactive({ 
-  email: '', 
-  account: '', 
-  username: '', 
-  password: '', 
-  confirmPassword: '', 
-  code: '' 
+  email: '',      // 用于：验证码登录、注册
+  account: '',    // 用于：密码登录
+  username: '',   // 用于：注册
+  password: '',   // 用于：登录/注册
+  confirmPassword: '', // 用于：注册确认
+  code: ''        // 用于：验证码
 })
+
 const countdown = ref(0)
 const loading = ref(false)
 const loginMethod = ref('password') 
@@ -136,19 +126,16 @@ const currentTurnstileToken = ref('')
 const turnstileError = ref('')
 let turnstileTimeout = null
 
-// --- Toast 提示 ---
-const toastVisible = ref(false)
-const toastMsg = ref('')
-const toastType = ref('success')
+// --- Toast 提示逻辑 (使用 window.dispatchEvent 触发自定义事件) ---
+// 这样就不需要在这个组件里 import Toast 组件了，解耦更干净
 const showToast = (msg, type = 'success') => {
-  toastMsg.value = msg
-  toastType.value = type
-  toastVisible.value = true
-  setTimeout(() => { toastVisible.value = false }, 2500)
+  window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
 }
 
 // --- 核心逻辑 ---
+
 const switchMode = (toLogin) => {
+  // 切换时清空表单，防止数据残留
   Object.assign(formData, { email: '', account: '', username: '', password: '', confirmPassword: '', code: '' })
   currentTurnstileToken.value = ''
   turnstileError.value = ''
@@ -194,12 +181,14 @@ const renderTurnstile = () => {
 watch(() => props.isLogin, () => setTimeout(() => renderTurnstile(), 50))
 onMounted(() => renderTurnstile())
 
-// 发送验证码
+// 【修复重点】发送验证码逻辑
 const sendCode = async () => {
-  const emailReg = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/
+  // 1. 确定目标邮箱：无论是"验证码登录"还是"注册"，用的都是 formData.email
   const targetEmail = formData.email
   
-  if (!emailReg.test(targetEmail)) {
+  // 2. 校验邮箱格式
+  const emailReg = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!targetEmail || !emailReg.test(targetEmail)) {
     showToast('请输入正确的邮箱地址！', 'error')
     return
   }
@@ -209,7 +198,10 @@ const sendCode = async () => {
     const response = await fetch(`${import.meta.env.VITE_API_URL}/api/send-code`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: targetEmail })
+      body: JSON.stringify({ 
+        email: targetEmail,
+        type: props.isLogin ? 'login' : 'register' 
+      })
     })
     const result = await response.json()
 
@@ -224,37 +216,44 @@ const sendCode = async () => {
       showToast(result.error || '发送失败', 'error')
     }
   } catch (e) {
-    showToast('网络错误，请确保后端服务已启动', 'error')
+    showToast('网络错误，请检查后端服务', 'error')
   } finally {
     loading.value = false
   }
 }
 
-// 提交表单
+// 【修复重点】提交表单逻辑
 const handleSubmit = async () => {
-  // 1. 注册时的确认密码校验
-  if (!props.isLogin && formData.password !== formData.confirmPassword) {
-    showToast('两次输入的密码不一致！', 'error')
-    return
-  }
-
-  // 2. 基础校验
-  if (props.isLogin) {
-    if (loginMethod.value === 'password' && (!formData.account || !formData.password)) {
-      showToast('请输入账号和密码！', 'error')
+  // 1. 注册时的校验
+  if (!props.isLogin) {
+    if (formData.password !== formData.confirmPassword) {
+      showToast('两次输入的密码不一致！', 'error')
       return
     }
-    if (loginMethod.value === 'code' && (!formData.email || !formData.code)) {
-      showToast('请输入邮箱和验证码！', 'error')
-      return
-    }
-  } else {
-    if (!formData.username || !formData.password || !formData.code) {
+    if (!formData.username || !formData.password || !formData.email || !formData.code) {
       showToast('请完整填写注册信息！', 'error')
       return
     }
   }
 
+  // 2. 登录时的校验
+  if (props.isLogin) {
+    if (loginMethod.value === 'password') {
+      // 密码登录：校验 account
+      if (!formData.account || !formData.password) {
+        showToast('请输入账号和密码！', 'error')
+        return
+      }
+    } else {
+      // 验证码登录：校验 email
+      if (!formData.email || !formData.code) {
+        showToast('请输入邮箱和验证码！', 'error')
+        return
+      }
+    }
+  }
+
+  // 3. 人机验证校验
   if (!currentTurnstileToken.value) {
     showToast('请完成人机验证！', 'error')
     return
@@ -266,11 +265,24 @@ const handleSubmit = async () => {
       ? `${import.meta.env.VITE_API_URL}/api/login` 
       : `${import.meta.env.VITE_API_URL}/api/register`
 
-    const body = { ...formData, cf_token: currentTurnstileToken.value }
-    
-    // 如果是登录，告诉后端当前是哪种登录方式
+    const body = { cf_token: currentTurnstileToken.value }
+
+    // 根据模式填充不同的数据
     if (props.isLogin) {
-      body.method = loginMethod.value
+        body.method = loginMethod.value
+        if (loginMethod.value === 'password') {
+            body.account = formData.account
+            body.password = formData.password
+        } else {
+            body.email = formData.email
+            body.code = formData.code
+        }
+    } else {
+        // 注册模式
+        body.email = formData.email
+        body.username = formData.username
+        body.password = formData.password
+        body.code = formData.code
     }
 
     const response = await fetch(url, {
@@ -283,8 +295,7 @@ const handleSubmit = async () => {
     if (response.ok) {
       showToast(result.message, 'success')
 
-      // 【新增】登录成功，保存用户信息到全局状态 + localStorage
-      // 后端返回的字段就是 result.user（包含 email 和 username）
+      // 【关键】登录成功，保存用户信息
       if (result.user) {
         currentUser.setInfo(result.user)
       }
@@ -292,6 +303,7 @@ const handleSubmit = async () => {
       setTimeout(() => handleClose(), 1500)
     } else {
       showToast(result.error || '操作失败', 'error')
+      // 失败重置 Turnstile
       if (window.turnstile) {
         const container = props.isLogin ? turnstileContainerLogin.value : turnstileContainerRegister.value
         if (container) window.turnstile.reset(container)
@@ -337,10 +349,4 @@ const handleSubmit = async () => {
 .modal-footer a:hover { text-decoration: underline; }
 .close-btn { position: absolute; top: 15px; right: 20px; font-size: 24px; color: #909399; cursor: pointer; }
 .close-btn:hover { color: #333; }
-
-.toast-container { position: fixed; top: 30px; left: 50%; transform: translateX(-50%); z-index: 9999; }
-.toast-box { display: flex; align-items: center; gap: 10px; background: #fff; padding: 12px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 14px; color: #333; border-left: 4px solid #ff9900; }
-.toast-icon { font-size: 18px; }
-.toast-fade-enter-active, .toast-fade-leave-active { transition: all 0.4s ease; }
-.toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateY(-20px); }
 </style>

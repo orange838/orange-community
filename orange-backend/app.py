@@ -1,3 +1,4 @@
+
 import os
 import random
 import sqlite3
@@ -83,12 +84,15 @@ def init_db():
     print("数据库已就绪")
 
 # ============================================================
-# 3. 发送验证码接口（原逻辑完整保留）
+# 3. 发送验证码接口（支持登录/注册两种邮件模板）
 # ============================================================
 @app.route('/api/send-code', methods=['POST'])
 def send_code():
     data = request.json
     email = data.get('email')
+    # 【新增】获取前端传来的类型，默认 register
+    code_type = data.get('type', 'register')
+
     if not email:
         return jsonify({"error": "没邮箱"}), 400
 
@@ -106,15 +110,14 @@ def send_code():
             "Content-Type": "application/json"
         }
 
-        payload = {
-            "from": "Orange Community <onboarding@cslblog.dpdns.org>",
-            "to": [email],
-            "subject": "Orange Community Verification Code",
-            "html": f"""
+        # 【修改点】根据 type 选择不同标题和正文
+        if code_type == 'login':
+            subject = "Orange Community 登录验证码"
+            html = f"""
             <div style="font-family: 'Microsoft YaHei', Arial, sans-serif; padding: 20px; background-color: #f9f9f9;">
                 <div style="max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-                    <h2 style="color: #ff9900; text-align: center;">欢迎加入橙子社区！</h2>
-                    <p style="color: #333; font-size: 16px;">您好，您正在进行注册操作，您的验证码是：</p>
+                    <h2 style="color: #ff9900; text-align: center;">欢迎回来！</h2>
+                    <p style="color: #333; font-size: 16px;">您好，您正在进行<b>登录</b>操作，您的验证码是：</p>
                     <div style="text-align: center; margin: 30px 0;">
                         <span style="font-size: 36px; font-weight: bold; color: #ff9900; letter-spacing: 5px; background: #fff8e6; padding: 10px 20px; border-radius: 8px;">{code}</span>
                     </div>
@@ -123,6 +126,28 @@ def send_code():
                 </div>
             </div>
             """
+        else:
+            # 注册模板（保持原样）
+            subject = "Orange Community 注册验证码"
+            html = f"""
+            <div style="font-family: 'Microsoft YaHei', Arial, sans-serif; padding: 20px; background-color: #f9f9f9;">
+                <div style="max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                    <h2 style="color: #ff9900; text-align: center;">欢迎加入橙子社区！</h2>
+                    <p style="color: #333; font-size: 16px;">您好，您正在进行<b>注册</b>操作，您的验证码是：</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <span style="font-size: 36px; font-weight: bold; color: #ff9900; letter-spacing: 5px; background: #fff8e6; padding: 10px 20px; border-radius: 8px;">{code}</span>
+                    </div>
+                    <p style="color: #666; font-size: 14px;">验证码有效期为 <strong>5分钟</strong>，请勿泄露给他人。</p>
+                    <p style="color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 10px;">如果您未请求此验证码，请忽略此邮件。</p>
+                </div>
+            </div>
+            """
+
+        payload = {
+            "from": "Orange Community <onboarding@cslblog.dpdns.org>",
+            "to": [email],
+            "subject": subject,
+            "html": html
         }
 
         response = requests.post(
