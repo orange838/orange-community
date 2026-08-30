@@ -1,0 +1,39 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ==========================================
+# 以下是项目新增配置
+# ==========================================
+
+# 1. 环境变量文件（防泄露，最重要！）
+.env
+
+# 2. 后端 Python 忽略项
+orange-backend/__pycache__/
+orange-backend/venv/
+orange-backend/*.db
+
+# 3. 系统垃圾文件
+Thumbs.db

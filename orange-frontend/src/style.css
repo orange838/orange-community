@@ -1,0 +1,24 @@
+/* src/style.css */
+
+/* 1. 彻底重置 body，去掉默认边距和奇怪的限制 */
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #f5f7fa; /* 把黑色背景改成咱们设计的浅灰背景 */
+  overflow: hidden; /* 防止出现双重滚动条 */
+}
+
+/* 2. 确保 #app 容器也是全屏的 */
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* 3. 去掉默认的字体渲染优化，防止在某些屏幕上发虚 */
+* {
+  box-sizing: border-box;
+}
