@@ -110,6 +110,8 @@
 
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
+// 【新增】引入状态仓库
+import { currentUser } from '../store'
 
 const props = defineProps({ isLogin: { type: Boolean, default: true } })
 const emit = defineEmits(['close', 'update:isLogin'])
@@ -280,6 +282,13 @@ const handleSubmit = async () => {
 
     if (response.ok) {
       showToast(result.message, 'success')
+
+      // 【新增】登录成功，保存用户信息到全局状态 + localStorage
+      // 后端返回的字段就是 result.user（包含 email 和 username）
+      if (result.user) {
+        currentUser.setInfo(result.user)
+      }
+
       setTimeout(() => handleClose(), 1500)
     } else {
       showToast(result.error || '操作失败', 'error')
