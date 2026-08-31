@@ -8,6 +8,9 @@
         <li><router-link to="/checkin" active-class="active">签到</router-link></li>
         <li><router-link to="/notice" active-class="active">公告</router-link></li>
         <li><router-link to="/profile" active-class="active">个人信息</router-link></li>
+        <li v-if="currentUser.info?.role === 'admin'">
+          <router-link to="/admin" active-class="active">后台</router-link>
+        </li>
       </ul>
     </aside>
 
@@ -46,7 +49,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import LoginModal from './components/LoginModal.vue'
 import Toast from './components/Toast.vue' // 引入 Toast
 import { currentUser } from './store'
@@ -59,6 +62,21 @@ const openModal = (mode) => {
   isLoginMode.value = mode
   showLogin.value = true
 }
+
+const handleGlobalToast = (event) => {
+  const { msg, type = 'success' } = event.detail || {}
+  if (msg && toastRef.value?.showToast) {
+    toastRef.value.showToast(msg, type)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('show-toast', handleGlobalToast)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('show-toast', handleGlobalToast)
+})
 
 // 【修改】退出登录逻辑 - 使用自定义弹窗
 const handleLogout = async () => {

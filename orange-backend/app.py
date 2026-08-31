@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
 import resend
 import requests
 
@@ -29,6 +30,47 @@ DATABASE = 'orange_community.db'
 
 # Resend API Key（邮件验证码服务）
 resend.api_key = os.getenv("RESEND_API_KEY", "[REDACTED_REVOKED_RESEND_KEY]")
+
+def hash_password(password):
+    return generate_password_hash(password)
+
+
+def verify_password(stored_password, plain_password):
+    if not stored_password:
+        return False
+    try:
+        return check_password_hash(stored_password, plain_password)
+    except (TypeError, ValueError):
+        return stored_password == plain_password
+
+
+def migrate_plaintext_passwords():
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    rows = c.execute('SELECT id, email, password FROM users').fetchall()
+    for user_id, email, password_value in rows:
+        if not password_value:
+            continue
+        hashed_prefixes = ('scrypt:', 'pbkdf2:', 'bcrypt$', 'argon2', 'sha256:', 'md5:')
+        if any(password_value.startswith(prefix) for prefix in hashed_prefixes):
+            continue
+        new_hash = hash_password(password_value)
+        c.execute('UPDATE users SET password=? WHERE id=?', (new_hash, user_id))
+    conn.commit()
+    conn.close()
+
+
+PROTECTED_ADMIN_EMAILS = {'3659793158@qq.com'}
+PROTECTED_ADMIN_USERNAMES = {'orange'}
+
+
+def is_protected_admin_user(user_record):
+    if not user_record:
+        return False
+    email = (user_record[1] if len(user_record) > 1 else '') or ''
+    username = (user_record[2] if len(user_record) > 2 else '') or ''
+    return email in PROTECTED_ADMIN_EMAILS or username in PROTECTED_ADMIN_USERNAMES
+
 
 # ============================================================
 # 1. Cloudflare Turnstile 人机验证函数
@@ -69,7 +111,10 @@ def init_db():
         'email TEXT UNIQUE NOT NULL, '
         'username TEXT NOT NULL, '
         'password TEXT NOT NULL, '
-        'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)'
+        'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, '
+        'orange_balance INTEGER DEFAULT 0, '
+        'last_sign_in_date TEXT, '
+        'role TEXT DEFAULT "user")'
     )
     c.execute(
         'CREATE TABLE IF NOT EXISTS codes '
@@ -79,9 +124,190 @@ def init_db():
         'expires_at TIMESTAMP NOT NULL, '
         'is_used INTEGER DEFAULT 0)'
     )
+    c.execute(
+        'CREATE TABLE IF NOT EXISTS checkin_records '
+        '(id INTEGER PRIMARY KEY AUTOINCREMENT, '
+        'email TEXT NOT NULL, '
+        'checkin_date TEXT NOT NULL, '
+        'points INTEGER DEFAULT 5, '
+        'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)'
+    )
+
+    user_cols = [row[1] for row in c.execute('PRAGMA table_info(users)').fetchall()]
+    for col_name, default_value in [('orange_balance', '0'), ('last_sign_in_date', None), ('role', '"user"')]:
+        if col_name not in user_cols:
+            if default_value is None:
+                c.execute(f'ALTER TABLE users ADD COLUMN {col_name} TEXT')
+            else:
+                c.execute(f'ALTER TABLE users ADD COLUMN {col_name} INTEGER DEFAULT {default_value}' if col_name == 'orange_balance' else f'ALTER TABLE users ADD COLUMN {col_name} TEXT DEFAULT {default_value}')
+
     conn.commit()
     conn.close()
+    migrate_plaintext_passwords()
     print("数据库已就绪")
+
+
+@app.route('/api/profile', methods=['GET'])
+def get_profile():
+    email = request.args.get('email')
+    if not email:
+        return jsonify({"error": "未登录"}), 401
+
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    user = c.execute(
+        'SELECT email, username, orange_balance, last_sign_in_date, role FROM users WHERE email=?',
+        (email,)
+    ).fetchone()
+    conn.close()
+
+    if not user:
+        return jsonify({"error": "用户不存在"}), 404
+
+    email_value, username, balance, last_sign_in_date, role = user
+    today = datetime.now().strftime('%Y-%m-%d')
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    sign_in_count = c.execute(
+        'SELECT COUNT(*) FROM checkin_records WHERE email=?',
+        (email_value,)
+    ).fetchone()[0]
+    conn.close()
+
+    return jsonify({
+        "email": email_value,
+        "username": username,
+        "orange_balance": int(balance or 0),
+        "last_sign_in_date": last_sign_in_date,
+        "sign_in_count": int(sign_in_count or 0),
+        "has_checked_in_today": bool(last_sign_in_date == today),
+        "role": role
+    }), 200
+
+
+@app.route('/api/checkin', methods=['POST'])
+def checkin():
+    data = request.json or {}
+    email = data.get('email')
+    if not email:
+        return jsonify({"error": "请先登录后再签到"}), 401
+
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    user = c.execute(
+        'SELECT id, email, username, orange_balance, last_sign_in_date FROM users WHERE email=?',
+        (email,)
+    ).fetchone()
+    if not user:
+        conn.close()
+        return jsonify({"error": "用户不存在"}), 404
+
+    today = datetime.now().strftime('%Y-%m-%d')
+    if user[4] == today:
+        sign_in_count = c.execute('SELECT COUNT(*) FROM checkin_records WHERE email=? AND checkin_date=?', (email, today)).fetchone()[0]
+        conn.close()
+        return jsonify({"error": "今日已签到", "sign_in_count": int(sign_in_count or 0), "orange_balance": int(user[3] or 0)}), 409
+
+    reward = 5
+    new_balance = int(user[3] or 0) + reward
+    c.execute('INSERT INTO checkin_records (email, checkin_date, points) VALUES (?, ?, ?)', (email, today, reward))
+    c.execute('UPDATE users SET orange_balance=?, last_sign_in_date=? WHERE email=?', (new_balance, today, email))
+    conn.commit()
+    sign_in_count = c.execute('SELECT COUNT(*) FROM checkin_records WHERE email=?', (email,)).fetchone()[0]
+    conn.close()
+    return jsonify({
+        "message": "签到成功",
+        "points": reward,
+        "orange_balance": new_balance,
+        "last_sign_in_date": today,
+        "sign_in_count": int(sign_in_count or 0),
+        "has_checked_in_today": True
+    }), 200
+
+
+@app.route('/api/admin/users', methods=['GET'])
+def admin_list_users():
+    admin_email = request.args.get('email')
+    if not admin_email:
+        return jsonify({"error": "未登录"}), 401
+
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    admin = c.execute('SELECT id, email, username, role FROM users WHERE email=?', (admin_email,)).fetchone()
+    if not admin or admin[3] != 'admin':
+        conn.close()
+        return jsonify({"error": "无权限"}), 403
+
+    rows = c.execute(
+        'SELECT id, email, username, orange_balance, role FROM users ORDER BY id ASC'
+    ).fetchall()
+    conn.close()
+
+    return jsonify({
+        "users": [{
+            "id": row[0],
+            "email": row[1],
+            "username": row[2],
+            "orange_balance": int(row[3] or 0),
+            "role": row[4] or 'user'
+        } for row in rows]
+    }), 200
+
+
+@app.route('/api/admin/users/update', methods=['POST'])
+def admin_update_user():
+    data = request.json or {}
+    admin_email = data.get('admin_email')
+    user_id = data.get('id')
+    new_balance = data.get('orange_balance')
+    new_role = data.get('role')
+
+    if not admin_email:
+        return jsonify({"error": "未登录"}), 401
+    if user_id is None or new_balance is None or not new_role:
+        return jsonify({"error": "参数不完整"}), 400
+
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    admin = c.execute('SELECT id, email, username, role FROM users WHERE email=?', (admin_email,)).fetchone()
+    if not admin or admin[3] != 'admin':
+        conn.close()
+        return jsonify({"error": "无权限"}), 403
+
+    target = c.execute('SELECT id, email, username, orange_balance, role FROM users WHERE id=?', (user_id,)).fetchone()
+    if not target:
+        conn.close()
+        return jsonify({"error": "用户不存在"}), 404
+
+    target_email = target[1]
+    target_username = target[2]
+    normalized_role = str(new_role).strip().lower()
+    if normalized_role not in {'admin', 'user'}:
+        conn.close()
+        return jsonify({"error": "角色值无效"}), 400
+
+    if target_email in PROTECTED_ADMIN_EMAILS or target_username in PROTECTED_ADMIN_USERNAMES:
+        if normalized_role != 'admin':
+            conn.close()
+            return jsonify({"error": "orange 账号禁止设置为普通用户"}), 403
+
+    if target_email == admin_email and normalized_role != 'admin':
+        conn.close()
+        return jsonify({"error": "管理员不能将自己设置为普通用户"}), 403
+
+    try:
+        new_balance_value = int(new_balance)
+    except (TypeError, ValueError):
+        conn.close()
+        return jsonify({"error": "橙子数量必须为整数"}), 400
+
+    c.execute(
+        'UPDATE users SET orange_balance=?, role=? WHERE id=?',
+        (new_balance_value, normalized_role, user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "更新成功", "id": user_id, "orange_balance": new_balance_value, "role": normalized_role}), 200
 
 # ============================================================
 # 3. 发送验证码接口（支持登录/注册两种邮件模板）
@@ -201,8 +427,9 @@ def register():
 
         # 标记验证码已使用
         cursor.execute("UPDATE codes SET is_used=1 WHERE email=? AND code=?", (email, code))
-        # 插入新用户
-        cursor.execute("INSERT INTO users (email, username, password) VALUES (?, ?, ?)", (email, username, password))
+        # 插入新用户，密码必须哈希存储
+        hashed_password = hash_password(password)
+        cursor.execute("INSERT INTO users (email, username, password) VALUES (?, ?, ?)", (email, username, hashed_password))
         conn.commit()
         return jsonify({"message": "注册成功"}), 201
     except Exception as e:
@@ -240,14 +467,18 @@ def login():
         try:
             # 核心：用 OR 条件同时查用户名和邮箱
             cursor.execute(
-                "SELECT id, email, username, password FROM users WHERE email=? OR username=?",
+                "SELECT id, email, username, password, role, orange_balance FROM users WHERE email=? OR username=?",
                 (account, account)
             )
             user = cursor.fetchone()
             if not user:
                 return jsonify({"error": "用户不存在"}), 401
-            if user[3] != password:
+            if not verify_password(user[3], password):
                 return jsonify({"error": "密码错误"}), 401
+            if user[3] == password and not any(user[3].startswith(prefix) for prefix in ('scrypt:', 'pbkdf2:', 'bcrypt$', 'argon2', 'sha256:', 'md5:')):
+                hashed_password = hash_password(password)
+                cursor.execute('UPDATE users SET password=? WHERE id=?', (hashed_password, user[0]))
+                conn.commit()
         finally:
             conn.close()
 
@@ -262,7 +493,7 @@ def login():
         cursor = conn.cursor()
         try:
             # 先查邮箱是否注册
-            cursor.execute("SELECT id, email, username, password FROM users WHERE email=?", (email,))
+            cursor.execute("SELECT id, email, username, password, role, orange_balance FROM users WHERE email=?", (email,))
             user = cursor.fetchone()
             if not user:
                 return jsonify({"error": "该邮箱未注册"}), 404
@@ -282,9 +513,22 @@ def login():
             conn.close()
 
     # ===== 登录成功，返回用户信息 =====
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    sign_in_count = c.execute('SELECT COUNT(*) FROM checkin_records WHERE email=?', (user[1],)).fetchone()[0]
+    balance = c.execute('SELECT orange_balance FROM users WHERE email=?', (user[1],)).fetchone()[0]
+    role = user[4] if len(user) > 4 else 'user'
+    conn.close()
+
     return jsonify({
         "message": f"欢迎回来，{user[2]}！",
-        "user": {"email": user[1], "username": user[2]}
+        "user": {
+            "email": user[1],
+            "username": user[2],
+            "orange_balance": int(balance or 0),
+            "sign_in_count": int(sign_in_count or 0),
+            "role": role
+        }
     }), 200
 
 # ============================================================
