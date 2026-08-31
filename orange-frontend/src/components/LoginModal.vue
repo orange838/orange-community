@@ -149,10 +149,17 @@ const handleClose = () => emit('close')
 const renderTurnstile = () => {
   const container = props.isLogin ? turnstileContainerLogin.value : turnstileContainerRegister.value
   if (!container) return
-  
+
   currentTurnstileToken.value = ''
   turnstileError.value = ''
-  
+
+  const hasSiteKey = Boolean(import.meta.env.VITE_CF_SITE_KEY)
+
+  if (!hasSiteKey) {
+    turnstileError.value = '未配置 Turnstile site key，无法渲染人机验证组件。'
+    return
+  }
+
   const waitForTurnstile = setInterval(() => {
     if (window.turnstile) {
       clearInterval(waitForTurnstile)
@@ -166,7 +173,7 @@ const renderTurnstile = () => {
             },
             'error-callback': (err) => {
               console.error('Turnstile error:', err)
-              turnstileError.value = '人机验证失败，请重试'
+              turnstileError.value = '当前域名或 site key 配置不匹配，无法完成人机验证，请检查 Cloudflare Turnstile 配置。'
               currentTurnstileToken.value = ''
             }
           })
