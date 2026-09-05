@@ -2,6 +2,11 @@ name = "orange-community"
 main = "worker_cf.py"
 compatibility_date = "2024-01-01"
 
+# 👇 加上这两行（开启 Python 支持）
+compatibility_flags = [
+  "python_workers"
+]
+
 # 这里填你刚才截图里的数据库 ID
 
 [[d1_databases]]
