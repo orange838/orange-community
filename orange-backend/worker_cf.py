@@ -14,7 +14,7 @@ sys.modules["resend"] = _ResendMock()
 from cf_db_adapter import set_cf_env
 
 # === 第四步：导入 Flask 应用 ===
-from app import app, init_db
+from app_cf import app, init_db
 
 # === 第五步：初始化数据库（D1 支持 CREATE TABLE IF NOT EXISTS） ===
 init_db()
