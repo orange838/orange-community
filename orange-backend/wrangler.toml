@@ -1,0 +1,15 @@
+name = "orange-community"
+main = "worker_cf.py"
+compatibility_date = "2024-01-01"
+
+# 这里填你刚才截图里的数据库 ID
+
+[[d1_databases]]
+binding = "DB"
+database_name = "orange-community"
+database_id = "05800bf1-0e28-4678-9a85-e9d9eec28039"
+
+# 环境变量配置
+[vars]
+# 设置为 1 告诉代码现在是在云端运行
+CF_WORKER = "1"
