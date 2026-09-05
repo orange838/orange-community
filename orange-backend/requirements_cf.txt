@@ -1,8 +1,0 @@
-# 核心框架
-flask
-# 替换了原来的 requests，因为 CF 不支持 requests
-httpx
-# CF Workers 专用适配器
-pywrangler
-# 密码哈希（你原来用到的）
-werkzeug
