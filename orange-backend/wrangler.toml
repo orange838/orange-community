@@ -1,6 +1,5 @@
 name = "orange-community"
 main = "worker_cf.py"
-type = "compiled"          # 👈 加这一行！告诉 wrangler 把依赖打包进去
 compatibility_date = "2024-01-01"
 compatibility_flags = [
   "python_workers"
