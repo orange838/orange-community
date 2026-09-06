@@ -5,6 +5,9 @@ compatibility_flags = [
   "python_workers"
 ]
 
+[build]
+command = "pip install -r requirements.txt"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "orange-community"
