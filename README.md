@@ -6,9 +6,20 @@ Welcome to the **Orange Community** repository! This project serves as the offic
 This platform is designed to be a dedicated space for sharing technical insights, personal thoughts, and community discussions. It combines a modern blog architecture with an interactive community backend.
 
 ## ️ Tech Stack
-- **Backend**: Python (FastAPI / Flask)
-- **Frontend**: Vue.js / React (TBD)
+- **Backend**: Python FastAPI (ASGI)
+- **Frontend**: Vue.js
 - **Database**: SQLite / PostgreSQL
+
+### Run the backend locally
+
+```bash
+cd orange-backend
+python -m pip install -r requirements.txt
+python main.py
+```
+
+The API runs at `http://127.0.0.1:3000` by default. The existing frontend
+continues to use the `/api/*` routes.
 
 ##  Contributing
 This is a personal project, but feedback and discussions are always welcome! Feel free to open an issue if you have any suggestions.
