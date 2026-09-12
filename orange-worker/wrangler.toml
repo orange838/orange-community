@@ -1,10 +1,7 @@
-name = "orange-backend-proxy"
+name = "orange-community-api"
 main = "src/index.ts"
 compatibility_date = "2026-09-12"
-
-routes = [
-  { pattern = "api.cslblog.dpdns.org/*", zone_name = "cslblog.dpdns.org" }
-]
+workers_dev = true
 
 [[d1_databases]]
 binding = "DB"
