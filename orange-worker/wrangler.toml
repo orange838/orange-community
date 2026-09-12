@@ -3,6 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2026-09-12"
 workers_dev = true
 
+routes = [
+  { pattern = "api.cslblog.dpdns.org/*", zone_name = "cslblog.dpdns.org" }
+]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "orange-community"
