@@ -34,7 +34,6 @@ dist-ssr
 orange-backend/__pycache__/
 orange-backend/venv/
 orange-backend/*.db
-orange-backend/app_old.py
 orange-backend/requirements_local.txt
 
 

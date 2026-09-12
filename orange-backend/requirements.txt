@@ -1,8 +1,9 @@
-# 核心框架
-flask
-# 替换了原来的 requests，因为 CF 不支持 requests
+# FastAPI ASGI 后端
+fastapi
+uvicorn[standard]
+# HTTP 客户端，用于 Cloudflare Turnstile 和 Resend
 httpx
-# CF Workers 专用适配器
-pywrangler
-# 密码哈希（你原来用到的）
+# 密码哈希和旧账号兼容
 werkzeug
+# 环境变量
+python-dotenv
