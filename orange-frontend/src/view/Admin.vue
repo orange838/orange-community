@@ -47,6 +47,34 @@
         </table>
       </div>
     </div>
+
+    <div class="admin-card">
+      <p class="admin-label">操作日志</p>
+      <div v-if="logsLoading" class="status-box">正在加载操作日志...</div>
+      <div v-else-if="logs.length === 0" class="status-box empty">暂无后台修改记录。</div>
+      <div v-else class="table-wrap">
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th>操作时间</th>
+              <th>操作管理员</th>
+              <th>目标用户</th>
+              <th>橙子数量变化</th>
+              <th>角色变化</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="log in logs" :key="log.id">
+              <td>{{ log.created_at }}</td>
+              <td>{{ log.admin_username || log.admin_email }}</td>
+              <td>{{ log.target_username || log.target_email }}</td>
+              <td>{{ log.old_balance }} → {{ log.new_balance }}</td>
+              <td>{{ log.old_role }} → {{ log.new_role }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -56,6 +84,8 @@ import { currentUser } from '../store'
 
 const users = ref([])
 const loading = ref(true)
+const logs = ref([])
+const logsLoading = ref(true)
 
 const isProtectedUser = (user) => {
   const email = (user?.email || '').trim()
@@ -77,6 +107,22 @@ const loadUsers = async () => {
 
     if (!res.ok) {
       throw new Error(result.error || '加载失败')
+    }
+
+    const loadLogs = async () => {
+      if (!currentUser.info?.email) return
+
+      logsLoading.value = true
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/logs?email=${encodeURIComponent(currentUser.info.email)}`)
+        const result = await res.json()
+        if (!res.ok) throw new Error(result.error || '日志加载失败')
+        logs.value = result.logs || []
+      } catch (error) {
+        showToast(error.message || '日志加载失败', 'error')
+      } finally {
+        logsLoading.value = false
+      }
     }
 
     users.value = (result.users || []).map((user) => ({
@@ -129,6 +175,7 @@ const saveUser = async (user) => {
     }
 
     showToast(result.message || '更新成功', 'success')
+    await loadLogs()
   } catch (error) {
     showToast(error.message || '更新失败', 'error')
   }
@@ -136,6 +183,7 @@ const saveUser = async (user) => {
 
 onMounted(() => {
   loadUsers()
+  loadLogs()
 })
 </script>
 

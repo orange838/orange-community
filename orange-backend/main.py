@@ -3,7 +3,7 @@ import os
 import random
 import sqlite3
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -37,7 +37,7 @@ CF_SECRET_KEY = os.getenv("CF_TURNSTILE_SECRET_KEY")
 DATABASE = "orange_community.db"
 
 # Resend API Key
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "[REDACTED_REVOKED_RESEND_KEY]")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 
 # ============================================================
 # 密码哈希（替代 werkzeug，兼容 pbkdf2:sha256 格式）
@@ -142,6 +142,20 @@ def init_db():
         "email TEXT NOT NULL, "
         "checkin_date TEXT NOT NULL, "
         "points INTEGER DEFAULT 5, "
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    )
+    c.execute(
+        "CREATE TABLE IF NOT EXISTS admin_audit_logs "
+        "(id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "admin_email TEXT NOT NULL, "
+        "admin_username TEXT, "
+        "target_user_id INTEGER NOT NULL, "
+        "target_email TEXT NOT NULL, "
+        "target_username TEXT, "
+        "old_balance INTEGER NOT NULL, "
+        "new_balance INTEGER NOT NULL, "
+        "old_role TEXT NOT NULL, "
+        "new_role TEXT NOT NULL, "
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
     )
 
@@ -579,10 +593,69 @@ async def admin_update_user(request: Request):
         return JSONResponse({"error": "橙子数量必须为整数"}, status_code=400)
 
     c.execute("UPDATE users SET orange_balance=?, role=? WHERE id=?", (new_balance_value, normalized_role, user_id))
+    c.execute(
+        "INSERT INTO admin_audit_logs "
+        "(admin_email, admin_username, target_user_id, target_email, target_username, "
+        "old_balance, new_balance, old_role, new_role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            admin[1],
+            admin[2],
+            target[0],
+            target[1],
+            target[2],
+            int(target[3] or 0),
+            new_balance_value,
+            target[4] or "user",
+            normalized_role,
+        ),
+    )
     conn.commit()
     conn.close()
     return JSONResponse(
         {"message": "更新成功", "id": user_id, "orange_balance": new_balance_value, "role": normalized_role},
+        status_code=200,
+    )
+
+
+@app.get("/api/admin/logs")
+async def admin_logs(request: Request):
+    admin_email = request.query_params.get("email")
+    if not admin_email:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    admin = c.execute("SELECT role FROM users WHERE email=?", (admin_email,)).fetchone()
+    if not admin or admin[0] != "admin":
+        conn.close()
+        return JSONResponse({"error": "无权限"}, status_code=403)
+
+    rows = c.execute(
+        "SELECT id, admin_email, admin_username, target_user_id, target_email, target_username, "
+        "old_balance, new_balance, old_role, new_role, created_at "
+        "FROM admin_audit_logs ORDER BY id DESC LIMIT 100"
+    ).fetchall()
+    conn.close()
+
+    return JSONResponse(
+        {
+            "logs": [
+                {
+                    "id": row[0],
+                    "admin_email": row[1],
+                    "admin_username": row[2],
+                    "target_user_id": row[3],
+                    "target_email": row[4],
+                    "target_username": row[5],
+                    "old_balance": row[6],
+                    "new_balance": row[7],
+                    "old_role": row[8],
+                    "new_role": row[9],
+                    "created_at": row[10],
+                }
+                for row in rows
+            ]
+        },
         status_code=200,
     )
 

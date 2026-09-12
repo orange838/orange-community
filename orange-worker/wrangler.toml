@@ -1,0 +1,16 @@
+name = "orange-backend-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-09-12"
+
+routes = [
+  { pattern = "api.cslblog.dpdns.org/*", zone_name = "cslblog.dpdns.org" }
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "orange-community"
+database_id = "05800bf1-0e28-4678-9a85-e9d9eec28039"
+
+[vars]
+PROTECTED_ADMIN_EMAIL = "3659793158@qq.com"
+PROTECTED_ADMIN_USERNAME = "orange"
