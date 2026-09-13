@@ -51,6 +51,44 @@ const toHex = (bytes: Uint8Array) =>
 const fromHex = (value: string) =>
   new Uint8Array(value.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) ?? []);
 
+const getActivityName = (path: string) => ({
+  "/api/profile": "查看个人信息",
+  "/api/send-code": "发送验证码",
+  "/api/register": "注册账号",
+  "/api/login": "登录账号",
+  "/api/checkin": "签到",
+  "/api/admin/users": "查看用户管理",
+  "/api/admin/users/update": "修改用户信息",
+  "/api/admin/logs": "查看操作日志"
+}[path] ?? "访问接口");
+
+async function recordActivity(
+  db: D1Database,
+  request: Request,
+  response: Response,
+  body: Record<string, unknown>
+) {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/") || url.pathname === "/api/health") return;
+  const actorEmail = String(
+    body.email ?? body.admin_email ?? url.searchParams.get("email") ?? ""
+  ) || null;
+  const actor = actorEmail ? await getUserByEmail(db, actorEmail) : null;
+  await db.prepare(
+    "INSERT INTO activity_logs " +
+    "(actor_email, actor_username, action, action_detail, method, path, status) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).bind(
+    actor?.email ?? actorEmail,
+    actor?.username ?? null,
+    getActivityName(url.pathname),
+    `${request.method} ${url.pathname}`,
+    request.method,
+    url.pathname,
+    response.status
+  ).run();
+}
+
 async function hashPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await crypto.subtle.importKey("raw", encode(password), "PBKDF2", false, ["deriveBits"]);
@@ -296,9 +334,8 @@ async function handle(request: Request, env: Env) {
     const admin = email ? await getUserByEmail(env.DB, email) : null;
     if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
     const logs = await env.DB.prepare(
-      "SELECT id, admin_email, admin_username, target_user_id, target_email, target_username, " +
-      "old_balance, new_balance, old_role, new_role, created_at " +
-      "FROM admin_audit_logs ORDER BY id DESC LIMIT 100"
+      "SELECT id, actor_email, actor_username, action, action_detail, method, path, status, created_at " +
+      "FROM activity_logs ORDER BY id DESC LIMIT 100"
     ).all();
     return json({ logs: logs.results });
   }
@@ -309,7 +346,12 @@ async function handle(request: Request, env: Env) {
 export default {
   async fetch(request: Request, env: Env) {
     try {
-      return cors(await handle(request, env), request);
+      const body = request.method === "POST"
+        ? await request.clone().json<Record<string, unknown>>()
+        : {};
+      const response = await handle(request, env);
+      await recordActivity(env.DB, request, response, body);
+      return cors(response, request);
     } catch (error) {
       console.error(error);
       return cors(json({ error: "服务器内部错误" }, 500), request);

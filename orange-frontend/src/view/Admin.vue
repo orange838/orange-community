@@ -4,7 +4,30 @@
       <h2>🛠️ 后台管理</h2>
     </div>
 
-    <div class="admin-card">
+    <div class="admin-tabs" role="tablist" aria-label="后台功能">
+      <button
+        class="admin-tab"
+        :class="{ active: activeTab === 'users' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'users'"
+        @click="activeTab = 'users'"
+      >
+        用户管理
+      </button>
+      <button
+        class="admin-tab"
+        :class="{ active: activeTab === 'logs' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'logs'"
+        @click="activeTab = 'logs'"
+      >
+        操作日志
+      </button>
+    </div>
+
+    <div v-if="activeTab === 'users'" class="admin-card">
       <p class="admin-label">用户管理</p>
 
       <div v-if="loading" class="status-box">正在加载用户列表...</div>
@@ -48,28 +71,28 @@
       </div>
     </div>
 
-    <div class="admin-card">
+    <div v-if="activeTab === 'logs'" class="admin-card">
       <p class="admin-label">操作日志</p>
       <div v-if="logsLoading" class="status-box">正在加载操作日志...</div>
-      <div v-else-if="logs.length === 0" class="status-box empty">暂无后台修改记录。</div>
+      <div v-else-if="logs.length === 0" class="status-box empty">暂无操作记录。</div>
       <div v-else class="table-wrap">
         <table class="user-table">
           <thead>
             <tr>
               <th>操作时间</th>
-              <th>操作管理员</th>
-              <th>目标用户</th>
-              <th>橙子数量变化</th>
-              <th>角色变化</th>
+              <th>操作者</th>
+              <th>操作</th>
+              <th>接口</th>
+              <th>结果</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="log in logs" :key="log.id">
               <td>{{ log.created_at }}</td>
-              <td>{{ log.admin_username || log.admin_email }}</td>
-              <td>{{ log.target_username || log.target_email }}</td>
-              <td>{{ log.old_balance }} → {{ log.new_balance }}</td>
-              <td>{{ log.old_role }} → {{ log.new_role }}</td>
+              <td>{{ log.actor_username || log.actor_email || '未登录用户' }}</td>
+              <td>{{ log.action }}</td>
+              <td>{{ log.path }}</td>
+              <td>{{ log.status }}</td>
             </tr>
           </tbody>
         </table>
@@ -86,6 +109,7 @@ const users = ref([])
 const loading = ref(true)
 const logs = ref([])
 const logsLoading = ref(true)
+const activeTab = ref('users')
 
 const isProtectedUser = (user) => {
   const email = (user?.email || '').trim()
@@ -95,6 +119,22 @@ const isProtectedUser = (user) => {
 
 const showToast = (msg, type = 'success') => {
   window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
+}
+
+const loadLogs = async () => {
+  if (!currentUser.info?.email) return
+
+  logsLoading.value = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/logs?email=${encodeURIComponent(currentUser.info.email)}`)
+    const result = await res.json()
+    if (!res.ok) throw new Error(result.error || '日志加载失败')
+    logs.value = result.logs || []
+  } catch (error) {
+    showToast(error.message || '日志加载失败', 'error')
+  } finally {
+    logsLoading.value = false
+  }
 }
 
 const loadUsers = async () => {
@@ -107,22 +147,6 @@ const loadUsers = async () => {
 
     if (!res.ok) {
       throw new Error(result.error || '加载失败')
-    }
-
-    const loadLogs = async () => {
-      if (!currentUser.info?.email) return
-
-      logsLoading.value = true
-      try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/logs?email=${encodeURIComponent(currentUser.info.email)}`)
-        const result = await res.json()
-        if (!res.ok) throw new Error(result.error || '日志加载失败')
-        logs.value = result.logs || []
-      } catch (error) {
-        showToast(error.message || '日志加载失败', 'error')
-      } finally {
-        logsLoading.value = false
-      }
     }
 
     users.value = (result.users || []).map((user) => ({
@@ -192,6 +216,9 @@ onMounted(() => {
 .admin-page { display: flex; flex-direction: column; gap: 16px; }
 .admin-header { background: #fff; border-radius: 8px; padding: 20px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.04); }
 .admin-header h2 { margin: 0; color: #333; }
+.admin-tabs { display: flex; gap: 8px; padding: 4px; background: #fff7eb; border-radius: 8px; }
+.admin-tab { flex: 1; padding: 11px 16px; border: none; border-radius: 6px; background: transparent; color: #8a5a00; font-size: 15px; cursor: pointer; }
+.admin-tab.active { background: #ff9900; color: #fff; font-weight: 700; }
 .admin-card { background: #fff; border-radius: 8px; padding: 28px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.04); border-left: 4px solid #ff9900; }
 .admin-label { margin: 0 0 18px; font-size: 18px; font-weight: 700; color: #333; }
 .status-box { padding: 20px; border-radius: 8px; background: #fafafa; color: #606266; }
