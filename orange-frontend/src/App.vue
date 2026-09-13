@@ -111,4 +111,70 @@ const handleLogout = async () => {
 .btn-logout { background-color: #f56c6c; color: #fff; }
 .btn-logout:hover { background-color: #e05c5c; }
 .content-area { flex: 1; padding: 30px; overflow-y: auto; }
+
+@media (max-width: 768px) {
+  .app-container {
+    display: block;
+    min-height: 100vh;
+    height: auto;
+  }
+
+  .sidebar {
+    width: 100%;
+    padding: 12px 12px 8px;
+    border-right: none;
+    border-bottom: 1px solid #e4e7ed;
+  }
+
+  .logo {
+    margin: 0 0 10px;
+    font-size: 20px;
+  }
+
+  .nav-menu {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+  }
+
+  .nav-menu li {
+    flex: 1 1 auto;
+  }
+
+  .nav-menu li a {
+    padding: 9px 10px;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 14px;
+  }
+
+  .nav-menu li a:hover,
+  .nav-menu li a.active {
+    border-right: none;
+    background-color: #fff7e6;
+  }
+
+  .main-wrapper {
+    min-height: calc(100vh - 104px);
+    overflow: visible;
+  }
+
+  .top-header {
+    min-height: 56px;
+    height: auto;
+    padding: 10px 14px;
+  }
+
+  .auth-buttons {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .content-area {
+    padding: 16px 12px 24px;
+    overflow: visible;
+  }
+}
 </style>
