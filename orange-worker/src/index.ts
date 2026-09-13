@@ -62,6 +62,8 @@ const getActivityName = (path: string) => ({
   "/api/admin/logs": "查看操作日志"
 }[path] ?? "访问接口");
 
+const roleLabel = (role: string) => role === "admin" ? "管理员" : "普通用户";
+
 async function recordActivity(
   db: D1Database,
   request: Request,
@@ -78,6 +80,40 @@ async function recordActivity(
     body.email ?? body.admin_email ?? body.account ?? url.searchParams.get("email") ?? ""
   ) || null;
   const actor = actorIdentifier ? await getUserByIdentifier(db, actorIdentifier) : null;
+  let actionDetail = `${request.method} ${url.pathname}`;
+  if (url.pathname === "/api/login") {
+    actionDetail = body.method === "code" ? "使用邮箱验证码登录" : "使用账号密码登录";
+  } else if (url.pathname === "/api/send-code") {
+    actionDetail = body.type === "login" ? "发送登录验证码" : "发送注册验证码";
+  } else if (url.pathname === "/api/register") {
+    actionDetail = `注册账号 ${String(body.username ?? body.email ?? "新用户")}`;
+  } else if (url.pathname === "/api/checkin") {
+    actionDetail = response.status === 200 ? "签到成功，获得 5 个橙子" : "尝试签到";
+  } else if (url.pathname === "/api/profile") {
+    actionDetail = "查看个人信息和签到数据";
+  } else if (url.pathname === "/api/admin/users") {
+    actionDetail = "查看用户列表";
+  } else if (url.pathname === "/api/admin/logs") {
+    actionDetail = "查看最近 100 条操作日志";
+  } else if (url.pathname === "/api/admin/users/update") {
+    const targetId = Number(body.id);
+    const audit = Number.isInteger(targetId)
+      ? await db.prepare(
+        "SELECT old_balance, new_balance, old_role, new_role, target_username " +
+        "FROM admin_audit_logs WHERE admin_email = ? AND target_user_id = ? " +
+        "ORDER BY id DESC LIMIT 1"
+      ).bind(actor?.email ?? actorIdentifier, targetId).first<{
+        old_balance: number;
+        new_balance: number;
+        old_role: string;
+        new_role: string;
+        target_username: string | null;
+      }>()
+      : null;
+    actionDetail = audit
+      ? `修改用户 ${audit.target_username ?? targetId}：橙子数量 ${audit.old_balance} → ${audit.new_balance}，角色 ${roleLabel(audit.old_role)} → ${roleLabel(audit.new_role)}`
+      : `提交用户修改：橙子数量 ${String(body.orange_balance ?? "未提供")}，角色 ${roleLabel(String(body.role ?? ""))}`;
+  }
   await db.prepare(
     "INSERT INTO activity_logs " +
     "(actor_email, actor_username, action, action_detail, method, path, status) " +
@@ -86,7 +122,7 @@ async function recordActivity(
     actor?.email ?? actorIdentifier,
     actor?.username ?? null,
     getActivityName(url.pathname),
-    `${request.method} ${url.pathname}`,
+    actionDetail,
     request.method,
     url.pathname,
     response.status
