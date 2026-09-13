@@ -39,3 +39,15 @@ CREATE TABLE IF NOT EXISTS admin_audit_logs (
   new_role TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_email TEXT,
+  actor_username TEXT,
+  action TEXT NOT NULL,
+  action_detail TEXT NOT NULL,
+  method TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
