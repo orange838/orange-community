@@ -74,16 +74,16 @@ async function recordActivity(
     !url.pathname.startsWith("/api/") ||
     url.pathname === "/api/health"
   ) return;
-  const actorEmail = String(
-    body.email ?? body.admin_email ?? url.searchParams.get("email") ?? ""
+  const actorIdentifier = String(
+    body.email ?? body.admin_email ?? body.account ?? url.searchParams.get("email") ?? ""
   ) || null;
-  const actor = actorEmail ? await getUserByEmail(db, actorEmail) : null;
+  const actor = actorIdentifier ? await getUserByIdentifier(db, actorIdentifier) : null;
   await db.prepare(
     "INSERT INTO activity_logs " +
     "(actor_email, actor_username, action, action_detail, method, path, status) " +
     "VALUES (?, ?, ?, ?, ?, ?, ?)"
   ).bind(
-    actor?.email ?? actorEmail,
+    actor?.email ?? actorIdentifier,
     actor?.username ?? null,
     getActivityName(url.pathname),
     `${request.method} ${url.pathname}`,
@@ -142,6 +142,13 @@ async function getUserByEmail(db: D1Database, email: string) {
   return db.prepare(
     "SELECT id, email, username, password, orange_balance, last_sign_in_date, role FROM users WHERE email = ?"
   ).bind(email).first<User>();
+}
+
+async function getUserByIdentifier(db: D1Database, identifier: string) {
+  return db.prepare(
+    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role " +
+    "FROM users WHERE email = ? OR username = ?"
+  ).bind(identifier, identifier).first<User>();
 }
 
 function isProtectedUser(user: User, env: Env) {
