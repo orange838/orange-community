@@ -69,7 +69,11 @@ async function recordActivity(
   body: Record<string, unknown>
 ) {
   const url = new URL(request.url);
-  if (!url.pathname.startsWith("/api/") || url.pathname === "/api/health") return;
+  if (
+    request.method === "OPTIONS" ||
+    !url.pathname.startsWith("/api/") ||
+    url.pathname === "/api/health"
+  ) return;
   const actorEmail = String(
     body.email ?? body.admin_email ?? url.searchParams.get("email") ?? ""
   ) || null;
