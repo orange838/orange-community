@@ -82,6 +82,7 @@
               <th>操作时间</th>
               <th>操作者</th>
               <th>操作</th>
+              <th>详细说明</th>
               <th>接口</th>
               <th>结果</th>
             </tr>
@@ -91,6 +92,7 @@
               <td>{{ log.created_at }}</td>
               <td>{{ log.actor_username || log.actor_email || '未登录用户' }}</td>
               <td>{{ log.action }}</td>
+              <td>{{ log.action_detail }}</td>
               <td>{{ log.path }}</td>
               <td>{{ log.status }}</td>
             </tr>
