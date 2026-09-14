@@ -71,6 +71,43 @@ const getActivityName = (path: string) => ({
 
 const roleLabel = (role: string) => role === "admin" ? "管理员" : "普通用户";
 
+const verificationEmailHtml = (type: string, code: string) => `
+<!doctype html>
+<html lang="zh-CN">
+  <body style="margin:0;background:#f4f7fb;color:#172033;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',Arial,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+      Orange Community ${type}验证码：${code}，有效期 5 分钟。
+    </div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:32px 12px;">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 28px rgba(31,55,88,.10);">
+          <tr>
+            <td style="padding:28px 32px;background:linear-gradient(135deg,#ff9f43,#f07832);color:#ffffff;">
+              <div style="font-size:13px;letter-spacing:2px;opacity:.9;">ORANGE COMMUNITY</div>
+              <div style="font-size:26px;font-weight:700;margin-top:8px;">${type}验证码</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:34px 32px 24px;">
+              <p style="margin:0;font-size:16px;line-height:1.8;">您好，您正在进行 Orange Community ${type}操作。</p>
+              <p style="margin:24px 0 10px;color:#64748b;font-size:14px;">您的验证码是</p>
+              <div style="padding:18px 12px;text-align:center;background:#fff7ed;border:1px solid #fed7aa;border-radius:14px;color:#ea580c;font-size:36px;font-weight:700;letter-spacing:10px;">${code}</div>
+              <p style="margin:18px 0 0;color:#64748b;font-size:14px;line-height:1.8;">验证码有效期为 <strong style="color:#172033;">5 分钟</strong>，请勿将验证码透露给他人。</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 32px 28px;border-top:1px solid #eef2f7;color:#94a3b8;font-size:12px;line-height:1.8;">
+              如果您没有请求此验证码，请忽略这封邮件。<br>
+              这是一封系统邮件，请勿直接回复。
+            </td>
+          </tr>
+        </table>
+        <p style="margin:18px 0 0;color:#94a3b8;font-size:12px;">© Orange Community</p>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+
 async function recordActivity(
   db: D1Database,
   request: Request,
@@ -259,7 +296,8 @@ async function handle(request: Request, env: Env) {
         from: "Orange Community <onboarding@cslblog.dpdns.org>",
         to: [email],
         subject: `Orange Community ${type}验证码`,
-        html: `<p>您的${type}验证码是：<strong>${code}</strong>，有效期 5 分钟。</p>`
+        text: `您的${type}验证码是：${code}，有效期 5 分钟。请勿将验证码透露给他人。`,
+        html: verificationEmailHtml(type, code)
       })
     });
     if (!response.ok) return json({ error: "发送失败" }, 500);
