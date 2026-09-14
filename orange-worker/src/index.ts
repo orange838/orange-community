@@ -284,8 +284,13 @@ async function handle(request: Request, env: Env) {
     if (!env.RESEND_API_KEY) return json({ error: "服务器配置错误：缺少 RESEND_API_KEY" }, 500);
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
-    await env.DB.prepare("INSERT INTO codes (email, code, expires_at) VALUES (?, ?, ?)")
-      .bind(email, code, expiresAt).run();
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM codes WHERE is_used = 1 OR expires_at <= ?")
+        .bind(new Date().toISOString()),
+      env.DB.prepare("DELETE FROM codes WHERE email = ?").bind(email),
+      env.DB.prepare("INSERT INTO codes (email, code, expires_at) VALUES (?, ?, ?)")
+        .bind(email, code, expiresAt)
+    ]);
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -319,7 +324,7 @@ async function handle(request: Request, env: Env) {
     if (!validCode) return json({ error: "码不对或过期" }, 400);
     try {
       await env.DB.batch([
-        env.DB.prepare("UPDATE codes SET is_used = 1 WHERE id = ?").bind(validCode.id),
+        env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id),
         env.DB.prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)")
           .bind(email, username, await hashPassword(password))
       ]);
@@ -343,7 +348,7 @@ async function handle(request: Request, env: Env) {
         "SELECT id FROM codes WHERE email = ? AND code = ? AND is_used = 0 AND expires_at > ?"
       ).bind(email, code, new Date().toISOString()).first<{ id: number }>();
       if (!validCode) return json({ error: "验证码错误或已过期" }, 400);
-      await env.DB.prepare("UPDATE codes SET is_used = 1 WHERE id = ?").bind(validCode.id).run();
+      await env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id).run();
       return json({ message: `欢迎回来，${user.username}！`, user: {
         email: user.email,
         username: user.username,
