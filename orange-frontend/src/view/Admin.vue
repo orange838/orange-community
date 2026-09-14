@@ -89,7 +89,7 @@
           </thead>
           <tbody>
             <tr v-for="log in logs" :key="log.id">
-              <td>{{ log.created_at }}</td>
+              <td>{{ formatLogTime(log.created_at) }}</td>
               <td>{{ log.actor_username || log.actor_email || '未登录用户' }}</td>
               <td>{{ log.action }}</td>
               <td>{{ log.action_detail }}</td>
@@ -121,6 +121,24 @@ const isProtectedUser = (user) => {
 
 const showToast = (msg, type = 'success') => {
   window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
+}
+
+const formatLogTime = (value) => {
+  if (!value) return '未知时间'
+  const raw = String(value)
+  const normalized = raw.includes('T') ? raw : `${raw.replace(' ', 'T')}Z`
+  const date = new Date(normalized)
+  if (Number.isNaN(date.getTime())) return raw
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(date).replace(/\//g, '-')
 }
 
 const loadLogs = async () => {
