@@ -185,10 +185,17 @@ const showTurnstileError = (error, message) => {
     '110100': 'Turnstile site key 无效，请联系管理员',
     '110110': 'Turnstile site key 不存在，请联系管理员',
     '110200': '当前访问域名未获 Turnstile 授权，请联系管理员',
+    '110600': '人机验证超时，请重试；如果持续失败，请检查设备时间和网络',
+    '110620': '人机验证交互超时，请重新操作验证',
     '200100': '设备时间或浏览器缓存异常，请校准时间并刷新页面',
     '200500': '验证服务加载失败，请检查网络是否拦截 challenges.cloudflare.com',
+    '400020': 'Turnstile site key 无效，请联系管理员',
+    '400070': 'Turnstile site key 已停用，请联系管理员',
   }
   let detail = errorMessages[code]
+  if (!detail && code.startsWith('300')) {
+    detail = 'Cloudflare 通用挑战失败，请更新浏览器并关闭 VPN、代理或广告拦截后重试'
+  }
   if (!detail && code.startsWith('600')) {
     detail = '验证环境未通过 Cloudflare 风险检查，请使用最新版 Chrome/系统浏览器，关闭 VPN 或广告拦截后重试'
   }
