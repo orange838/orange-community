@@ -181,7 +181,18 @@ const getTurnstileErrorCode = (error) => {
 const showTurnstileError = (error, message) => {
   const code = getTurnstileErrorCode(error)
   console.error('Turnstile error:', { code, error, hostname: window.location.hostname })
-  turnstileError.value = `${message}（错误码：${code}）`
+  const errorMessages = {
+    '110100': 'Turnstile site key 无效，请联系管理员',
+    '110110': 'Turnstile site key 不存在，请联系管理员',
+    '110200': '当前访问域名未获 Turnstile 授权，请联系管理员',
+    '200100': '设备时间或浏览器缓存异常，请校准时间并刷新页面',
+    '200500': '验证服务加载失败，请检查网络是否拦截 challenges.cloudflare.com',
+  }
+  let detail = errorMessages[code]
+  if (!detail && code.startsWith('600')) {
+    detail = '验证环境未通过 Cloudflare 风险检查，请使用最新版 Chrome/系统浏览器，关闭 VPN 或广告拦截后重试'
+  }
+  turnstileError.value = `${detail || message}（错误码：${code}）`
   currentTurnstileToken.value = ''
 }
 
