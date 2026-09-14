@@ -230,6 +230,7 @@ const renderTurnstile = () => {
         try {
           turnstileWidgetId = window.turnstile.render(container, {
             sitekey: import.meta.env.VITE_CF_SITE_KEY,
+            action: props.isLogin ? 'login' : 'register',
             callback: (token) => {
               currentTurnstileToken.value = token
               turnstileError.value = ''

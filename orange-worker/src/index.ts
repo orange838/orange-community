@@ -26,7 +26,14 @@ const json = (body: unknown, status = 200) =>
 
 const allowedOrigins = new Set([
   "https://cslblog.dpdns.org",
+  "https://www.cslblog.dpdns.org",
   "https://orange-community.pages.dev"
+]);
+
+const allowedTurnstileHostnames = new Set([
+  "cslblog.dpdns.org",
+  "www.cslblog.dpdns.org",
+  "orange-community.pages.dev"
 ]);
 
 const cors = (response: Response, request: Request) => {
@@ -163,15 +170,30 @@ async function verifyPassword(stored: string, password: string) {
   return false;
 }
 
-async function verifyTurnstile(token: string | undefined, env: Env) {
-  if (!token) return false;
-  if (!env.CF_TURNSTILE_SECRET_KEY) return false;
+async function verifyTurnstile(
+  token: string | undefined,
+  expectedAction: "login" | "register",
+  request: Request,
+  env: Env
+) {
+  if (!token || token.length > 2048 || !env.CF_TURNSTILE_SECRET_KEY) return false;
   const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
     method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ secret: env.CF_TURNSTILE_SECRET_KEY, response: token })
   });
-  const result = await response.json<{ success?: boolean }>();
-  return result.success === true;
+  if (!response.ok) return false;
+  const result = await response.json<{
+    success?: boolean;
+    action?: string;
+    hostname?: string;
+  }>();
+  const origin = request.headers.get("Origin");
+  const expectedHostname = origin ? new URL(origin).hostname : "";
+  return result.success === true
+    && result.action === expectedAction
+    && allowedTurnstileHostnames.has(result.hostname ?? "")
+    && result.hostname === expectedHostname;
 }
 
 async function getUserByEmail(db: D1Database, email: string) {
@@ -245,7 +267,7 @@ async function handle(request: Request, env: Env) {
   }
 
   if (url.pathname === "/api/register" && request.method === "POST") {
-    if (!await verifyTurnstile(body.cf_token as string | undefined, env)) {
+    if (!await verifyTurnstile(body.cf_token as string | undefined, "register", request, env)) {
       return json({ error: "人机验证失败，请重试" }, 403);
     }
     const email = String(body.email ?? "");
@@ -270,7 +292,7 @@ async function handle(request: Request, env: Env) {
   }
 
   if (url.pathname === "/api/login" && request.method === "POST") {
-    if (!await verifyTurnstile(body.cf_token as string | undefined, env)) {
+    if (!await verifyTurnstile(body.cf_token as string | undefined, "login", request, env)) {
       return json({ error: "人机验证失败，请重试" }, 403);
     }
     if (body.method === "code") {
