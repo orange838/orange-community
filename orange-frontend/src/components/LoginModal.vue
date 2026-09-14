@@ -98,7 +98,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, watch } from 'vue'
 import { currentUser } from '../store' 
 
 const props = defineProps({ isLogin: { type: Boolean, default: true } })
@@ -125,6 +125,9 @@ const turnstileContainerRegister = ref(null)
 const currentTurnstileToken = ref('')
 const turnstileError = ref('')
 let turnstileTimeout = null
+let turnstileWaitInterval = null
+let turnstileLoadTimeout = null
+let turnstileWidgetId = null
 
 // --- Toast 提示逻辑 (使用 window.dispatchEvent 触发自定义事件) ---
 // 这样就不需要在这个组件里 import Toast 组件了，解耦更干净
@@ -141,15 +144,52 @@ const switchMode = (toLogin) => {
   turnstileError.value = ''
   loginMethod.value = 'password' 
   if (turnstileTimeout) clearTimeout(turnstileTimeout)
+  clearTurnstileWidget()
   emit('update:isLogin', toLogin)
 }
 
 const handleClose = () => emit('close')
 
+const clearTurnstileWidget = () => {
+  if (turnstileTimeout) {
+    clearTimeout(turnstileTimeout)
+    turnstileTimeout = null
+  }
+  if (turnstileWaitInterval) {
+    clearInterval(turnstileWaitInterval)
+    turnstileWaitInterval = null
+  }
+  if (turnstileLoadTimeout) {
+    clearTimeout(turnstileLoadTimeout)
+    turnstileLoadTimeout = null
+  }
+  if (turnstileWidgetId !== null && window.turnstile?.remove) {
+    window.turnstile.remove(turnstileWidgetId)
+    turnstileWidgetId = null
+  }
+}
+
+const getTurnstileErrorCode = (error) => {
+  if (typeof error === 'string' || typeof error === 'number') return String(error)
+  if (error && typeof error === 'object') {
+    if ('code' in error) return String(error.code)
+    if ('errorCode' in error) return String(error.errorCode)
+  }
+  return '未知'
+}
+
+const showTurnstileError = (error, message) => {
+  const code = getTurnstileErrorCode(error)
+  console.error('Turnstile error:', { code, error, hostname: window.location.hostname })
+  turnstileError.value = `${message}（错误码：${code}）`
+  currentTurnstileToken.value = ''
+}
+
 const renderTurnstile = () => {
   const container = props.isLogin ? turnstileContainerLogin.value : turnstileContainerRegister.value
   if (!container) return
 
+  clearTurnstileWidget()
   currentTurnstileToken.value = ''
   turnstileError.value = ''
 
@@ -160,33 +200,50 @@ const renderTurnstile = () => {
     return
   }
 
-  const waitForTurnstile = setInterval(() => {
+  turnstileWaitInterval = setInterval(() => {
     if (window.turnstile) {
-      clearInterval(waitForTurnstile)
+      clearInterval(turnstileWaitInterval)
+      turnstileWaitInterval = null
+      if (turnstileLoadTimeout) {
+        clearTimeout(turnstileLoadTimeout)
+        turnstileLoadTimeout = null
+      }
       turnstileTimeout = setTimeout(() => {
         try {
-          window.turnstile.render(container, {
+          turnstileWidgetId = window.turnstile.render(container, {
             sitekey: import.meta.env.VITE_CF_SITE_KEY,
             callback: (token) => {
               currentTurnstileToken.value = token
               turnstileError.value = ''
             },
             'error-callback': (err) => {
-              console.error('Turnstile error:', err)
-              turnstileError.value = '当前域名或 site key 配置不匹配，无法完成人机验证，请检查 Cloudflare Turnstile 配置。'
-              currentTurnstileToken.value = ''
+              showTurnstileError(err, '人机验证加载失败，请检查网络、浏览器拦截或 Turnstile 配置')
+            },
+            'expired-callback': () => {
+              showTurnstileError('token-expired', '人机验证已过期，请重新验证')
+            },
+            'timeout-callback': () => {
+              showTurnstileError('challenge-timeout', '人机验证超时，请重试')
             }
           })
         } catch (e) {
-          turnstileError.value = '验证组件加载失败，请刷新页面重试'
+          showTurnstileError(e, '人机验证组件初始化失败，请刷新页面重试')
         }
       }, 100)
     }
   }, 100)
+  turnstileLoadTimeout = setTimeout(() => {
+    if (turnstileWaitInterval) {
+      clearInterval(turnstileWaitInterval)
+      turnstileWaitInterval = null
+      showTurnstileError('script-not-loaded', '人机验证脚本加载失败，请检查网络或浏览器拦截')
+    }
+  }, 10000)
 }
 
 watch(() => props.isLogin, () => setTimeout(() => renderTurnstile(), 50))
 onMounted(() => renderTurnstile())
+onBeforeUnmount(clearTurnstileWidget)
 
 // 【修复重点】发送验证码逻辑
 const sendCode = async () => {
