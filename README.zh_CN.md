@@ -40,6 +40,10 @@ npm run deploy
 
 `local-d1-data.sql` 包含密码哈希，只能在本地临时生成和使用，不能提交到 Git。
 
+生产 Worker 已连接到 Cloudflare Workers Builds。仓库的 `main` 分支推送会自动构建
+并部署 `orange-worker/`，构建命令为 `npm install && npm run typecheck`，部署命令为
+`npx wrangler deploy`。修改 Worker 后只需提交并推送代码，不需要再手动执行部署命令。
+
 前端需要部署到 Cloudflare Pages，构建目录为 `orange-frontend`，构建命令为
 `npm run build`，输出目录为 `dist`。Pages 的生产环境变量必须设置：
 
