@@ -1,28 +1,18 @@
-# Cloudflare Monitor Local Dashboard
+# Orange Community Monitoring Dashboard
 
-这个目录用于在本地查看当前 Orange Community 项目的 Cloudflare 资源状态。
+This directory contains the static monitoring dashboard for Orange Community.
 
-## 运行方式
+## Dashboard scope
 
-1. 先生成数据：
-   ```powershell
-   cd "D:\csl\个人项目\橙子社区\cloudflare-monitor"
-   node .\scripts\gather-cf-status.mjs
-   ```
+The dashboard summarizes:
 
-2. 启动本地静态站点：
-   ```powershell
-   cd "D:\csl\个人项目\橙子社区\cloudflare-monitor"
-   python -m http.server 8080
-   ```
+- API health
+- Pages domains
+- D1 database usage
+- HTTPS status
+- Git commit information
+- Turnstile verification pass and failure metrics
 
-3. 打开浏览器：
-   ```text
-   http://localhost:8080
-   ```
+The dashboard does not display API tokens, Worker secrets, email service keys, or other credentials.
 
-## 说明
-
-- 该看板展示的内容来自当前项目真实的 Cloudflare 资源信息。
-- 包括：Pages、Worker、D1、HTTPS、部署状态等。
-- 数据生成脚本会读取 Wrangler 和 HTTP 健康检查结果，并写入 `data/cf-status.json`。
+For the Chinese documentation, see [`README.zh_CN.md`](./README.zh_CN.md).
