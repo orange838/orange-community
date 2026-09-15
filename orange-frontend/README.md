@@ -1,5 +1,14 @@
-# Vue 3 + Vite
+# Orange Community Frontend
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+This directory contains the Vue frontend for Orange Community.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## Scope
+
+- Vue 3 application
+- Community pages, authentication views, user features, and administration views
+- API integration with the Orange Community Worker backend
+
+## Related directories
+
+- [`../orange-worker/`](../orange-worker/) - API and database integration
+- [`../cloudflare-monitor/`](../cloudflare-monitor/) - service monitoring dashboard
