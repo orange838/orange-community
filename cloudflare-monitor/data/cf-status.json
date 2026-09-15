@@ -1,0 +1,149 @@
+{
+  "generatedAt": "2026-09-15T11:32:50.756Z",
+  "summary": {
+    "pages": {
+      "status": "OK",
+      "domain": "orange-community.pages.dev, cslblog.dpdns.org, www.cslblog.dpdns.org"
+    },
+    "worker": {
+      "status": "OK",
+      "route": "api.cslblog.dpdns.org/api/health"
+    },
+    "d1": {
+      "status": "OK",
+      "databaseName": "orange-community"
+    },
+    "https": {
+      "status": "OK",
+      "domains": "orange-community.pages.dev, cslblog.dpdns.org, www.cslblog.dpdns.org"
+    },
+    "api": {
+      "status": "OK",
+      "endpoint": "https://api.cslblog.dpdns.org/api/health"
+    },
+    "deploy": {
+      "status": "OK",
+      "branch": "main"
+    },
+    "turnstile": {
+      "status": "OK",
+      "passRate": "暂无数据"
+    }
+  },
+  "resources": [
+    {
+      "name": "Pages Project",
+      "type": "Pages",
+      "status": "OK",
+      "detail": "orange-community / orange-community.pages.dev, cslblog.dpdns.org, www.cslblog.dpdns.org"
+    },
+    {
+      "name": "Worker API",
+      "type": "Worker",
+      "status": "OK",
+      "detail": "status=unknown; message=ok"
+    },
+    {
+      "name": "D1 Database",
+      "type": "D1",
+      "status": "OK",
+      "detail": "57.3 kB / 71 read / 32 write"
+    },
+    {
+      "name": "HTTPS",
+      "type": "DNS/SSL",
+      "status": "OK",
+      "detail": "HTTP/1.1 200 OK"
+    },
+    {
+      "name": "Account",
+      "type": "Cloudflare",
+      "status": "OK",
+      "detail": "已验证 / 账户已连接"
+    },
+    {
+      "name": "Git Head",
+      "type": "Deploy",
+      "status": "OK",
+      "detail": "N/A"
+    },
+    {
+      "name": "Turnstile",
+      "type": "Security",
+      "status": "OK",
+      "detail": "0 passed / 0 failed (24h)"
+    }
+  ],
+  "domains": [
+    {
+      "name": "orange-community.pages.dev",
+      "value": "Active"
+    },
+    {
+      "name": "cslblog.dpdns.org",
+      "value": "Active"
+    },
+    {
+      "name": "www.cslblog.dpdns.org",
+      "value": "Active"
+    }
+  ],
+  "d1Details": [
+    {
+      "name": "Database name",
+      "value": "orange-community"
+    },
+    {
+      "name": "Database size",
+      "value": "57.3 kB"
+    },
+    {
+      "name": "Read queries 24h",
+      "value": "71"
+    },
+    {
+      "name": "Write queries 24h",
+      "value": "32"
+    },
+    {
+      "name": "Rows read 24h",
+      "value": "611"
+    },
+    {
+      "name": "Rows written 24h",
+      "value": "61"
+    }
+  ],
+  "deployments": [
+    {
+      "name": "Project",
+      "value": "orange-community"
+    },
+    {
+      "name": "Branch",
+      "value": "main"
+    },
+    {
+      "name": "Git head",
+      "value": "N/A"
+    }
+  ],
+  "turnstile": [
+    {
+      "name": "Passed",
+      "value": "0"
+    },
+    {
+      "name": "Failed",
+      "value": "0"
+    },
+    {
+      "name": "Total",
+      "value": "0"
+    },
+    {
+      "name": "Pass rate",
+      "value": "暂无数据"
+    }
+  ]
+}

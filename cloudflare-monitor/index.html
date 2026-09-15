@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>橙子社区 - Cloudflare 监控</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Cloudflare 资源总览</div>
+          <h1>橙子社区</h1>
+        </div>
+        <div class="top-actions">
+          <button id="refreshBtn" class="primary-btn">刷新</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="summary-grid" id="summaryGrid"></section>
+
+        <section class="panel panel-wide">
+          <div class="panel-header">
+            <h2>资源状态</h2>
+            <span class="muted" id="updatedAt">--</span>
+          </div>
+          <div class="resource-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>资源</th>
+                  <th>类型</th>
+                  <th>状态</th>
+                  <th>值 / 详情</th>
+                </tr>
+              </thead>
+              <tbody id="resourceTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel-grid">
+          <div class="panel">
+            <div class="panel-header">
+              <h2>域名与路由</h2>
+            </div>
+            <ul id="domainList" class="list"></ul>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>D1 数据库</h2>
+            </div>
+            <ul id="d1List" class="list"></ul>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>部署信息</h2>
+            </div>
+            <ul id="deploymentList" class="list"></ul>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>人机验证</h2>
+            </div>
+            <ul id="turnstileList" class="list"></ul>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
