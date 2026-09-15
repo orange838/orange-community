@@ -69,7 +69,7 @@ const d1Command = `cd /d "${path.join(rootDir, 'orange-worker')}" && npx wrangle
 const apiHealthCommand = `curl -fsS https://api.cslblog.dpdns.org/api/health`;
 const rootDomainCommand = `curl -I -sS https://cslblog.dpdns.org`;
 const pagesRootCommand = `curl -I -sS https://orange-community.pages.dev`;
-const gitHeadCommand = `git -C "${rootDir}" log -n 1 --format=%h %ci`;
+const gitHeadCommand = `git -C "${rootDir}" rev-parse --short HEAD`;
 const turnstileCommand = `cd /d "${path.join(rootDir, 'orange-worker')}" && npx wrangler d1 execute orange-community --remote --json --command "SELECT action, SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) AS passed, SUM(CASE WHEN passed = 0 THEN 1 ELSE 0 END) AS failed, COUNT(*) AS total FROM turnstile_verification_logs WHERE created_at >= datetime('now', '-24 hours') GROUP BY action"`;
 
 const pagesRaw = runCommand(pagesCommand);
