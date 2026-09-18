@@ -380,7 +380,7 @@ const handleSubmit = async () => {
 
       // 【关键】登录成功，保存用户信息
       if (result.user) {
-        currentUser.setInfo(result.user)
+        currentUser.setInfo({ ...result.user, token: result.token })
       }
 
       setTimeout(() => handleClose(), 1500)

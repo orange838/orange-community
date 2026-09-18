@@ -6,6 +6,8 @@ interface Env {
   RESEND_API_KEY: string;
   PROTECTED_ADMIN_EMAIL: string;
   PROTECTED_ADMIN_USERNAME: string;
+  // JWT 签名密钥（务必配置一个随机长字符串，与本地 backend 的 SECRET_KEY 保持一致）
+  SECRET_KEY: string;
 }
 
 type User = {
@@ -44,11 +46,12 @@ const cors = (response: Response, request: Request) => {
     headers.set("Vary", "Origin");
   }
   headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Content-Type");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   return new Response(response.body, { status: response.status, headers });
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+// 签到/日期统一按东八区计算（避免 UTC 日期错位），与本地 backend 对齐
+const todayCN = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
 
 const encode = (value: string) => new TextEncoder().encode(value);
 
@@ -108,11 +111,192 @@ const verificationEmailHtml = (type: string, code: string) => `
   </body>
 </html>`;
 
+// ============================================================
+// 常量
+// ============================================================
+const CODE_TTL_MS = 5 * 60_000;          // 验证码 5 分钟有效
+const SEND_CODE_COOLDOWN_MS = 60_000;    // 同一邮箱 60 秒内仅可发送一次
+const CODE_MAX_ATTEMPTS = 5;             // 验证码最多尝试 5 次
+const TOKEN_TTL_HOURS = 24 * 7;          // token 7 天有效
+
+// ============================================================
+// JWT（HS256，无状态），与本地 backend 算法一致
+// ============================================================
+function b64url(bytes: Uint8Array) {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function b64urlToBytes(s: string) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function hmacSign(secret: string, data: string) {
+  const key = await crypto.subtle.importKey(
+    "raw", encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, encode(data)));
+}
+
+async function createToken(secret: string, email: string, username: string, role: string, ttlHours = TOKEN_TTL_HOURS) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
+  const payload = b64url(encode(JSON.stringify({
+    email, username, role, iat: now, exp: now + ttlHours * 3600
+  })));
+  const signingInput = `${header}.${payload}`;
+  const sig = b64url(await hmacSign(secret, signingInput));
+  return `${signingInput}.${sig}`;
+}
+
+async function verifyToken(secret: string, token: string) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const [header, payload, sig] = parts;
+    const signingInput = `${header}.${payload}`;
+    const expected = b64url(await hmacSign(secret, signingInput));
+    if (expected !== sig) return null;
+    const parsed = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload))) as {
+      email: string; username: string; role: string; exp: number;
+    };
+    if (parsed.exp < Math.floor(Date.now() / 1000)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function getAuth(request: Request, env: Env) {
+  const auth = request.headers.get("Authorization") ?? "";
+  if (!auth.startsWith("Bearer ")) return null;
+  return verifyToken(env.SECRET_KEY, auth.slice(7).trim());
+}
+
+// ============================================================
+// 密码哈希：与本地 backend 一致 pbkdf2:sha256:600000$saltHex$keyHex
+// ============================================================
+async function hashPassword(password: string) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey("raw", encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 600_000, hash: "SHA-256" },
+    key,
+    256
+  );
+  return `pbkdf2:sha256:600000$${toHex(salt)}$${toHex(new Uint8Array(bits))}`;
+}
+
+async function verifyPassword(stored: string, password: string) {
+  if (stored.startsWith("scrypt:")) {
+    const [parameters, salt, expected] = stored.split("$");
+    const [, n, r, p] = parameters.split(":");
+    const derived = await scrypt(encode(password), encode(salt), Number(n), Number(r), Number(p), 64);
+    return toHex(derived) === expected;
+  }
+
+  if (stored.startsWith("pbkdf2:sha256:")) {
+    const [parameters, saltHex, expected] = stored.split("$");
+    const iterations = Number(parameters.split(":")[2]);
+    const key = await crypto.subtle.importKey("raw", encode(password), "PBKDF2", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits(
+      { name: "PBKDF2", salt: fromHex(saltHex), iterations, hash: "SHA-256" },
+      key,
+      256
+    );
+    return toHex(new Uint8Array(bits)) === expected;
+  }
+
+  return false;
+}
+
+// ============================================================
+// Turnstile
+// ============================================================
+async function verifyTurnstile(
+  token: string | undefined,
+  expectedAction: "login" | "register",
+  request: Request,
+  env: Env,
+  db: D1Database
+) {
+  const logResult = async (passed: boolean, hostname: string | null = null) => {
+    await db.prepare(
+      "INSERT INTO turnstile_verification_logs (action, passed, hostname) VALUES (?, ?, ?)"
+    ).bind(expectedAction, passed ? 1 : 0, hostname).run();
+    return passed;
+  };
+
+  if (!token || token.length > 2048 || !env.CF_TURNSTILE_SECRET_KEY) {
+    return logResult(false);
+  }
+  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ secret: env.CF_TURNSTILE_SECRET_KEY, response: token })
+  });
+  if (!response.ok) return logResult(false);
+  const result = await response.json<{
+    success?: boolean;
+    action?: string;
+    hostname?: string;
+  }>();
+  const origin = request.headers.get("Origin");
+  const expectedHostname = origin ? new URL(origin).hostname : "";
+  const passed = result.success === true
+    && result.action === expectedAction
+    && allowedTurnstileHostnames.has(result.hostname ?? "")
+    && result.hostname === expectedHostname;
+  return logResult(passed, result.hostname ?? null);
+}
+
+// ============================================================
+// 用户 / 验证码 / 活动日志
+// ============================================================
+async function getUserByEmail(db: D1Database, email: string) {
+  return db.prepare(
+    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role FROM users WHERE email = ?"
+  ).bind(email).first<User>();
+}
+
+async function getUserByIdentifier(db: D1Database, identifier: string) {
+  return db.prepare(
+    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role " +
+    "FROM users WHERE email = ? OR username = ?"
+  ).bind(identifier, identifier).first<User>();
+}
+
+function isProtectedUser(user: { email: string; username: string }, env: Env) {
+  return user.email === env.PROTECTED_ADMIN_EMAIL || user.username === env.PROTECTED_ADMIN_USERNAME;
+}
+
+async function validateCode(db: D1Database, email: string, code: string) {
+  const row = await db.prepare(
+    "SELECT id, attempts FROM codes WHERE email = ? AND code = ? AND is_used = 0 AND expires_at > ? " +
+    "ORDER BY id DESC LIMIT 1"
+  ).bind(email, code, new Date().toISOString()).first<{ id: number; attempts: number }>();
+  if (!row) {
+    await db.prepare(
+      "UPDATE codes SET attempts = attempts + 1 WHERE email = ? AND code = ? AND is_used = 0"
+    ).bind(email, code).run();
+    return null;
+  }
+  if ((row.attempts ?? 0) >= CODE_MAX_ATTEMPTS) return null;
+  return row;
+}
+
 async function recordActivity(
   db: D1Database,
   request: Request,
   response: Response,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  env: Env
 ) {
   const url = new URL(request.url);
   if (
@@ -120,8 +304,11 @@ async function recordActivity(
     !url.pathname.startsWith("/api/") ||
     url.pathname === "/api/health"
   ) return;
+
+  const tokenPayload = getAuth(request, env) as { email: string } | null;
   const actorIdentifier = String(
-    body.email ?? body.admin_email ?? body.account ?? url.searchParams.get("email") ?? ""
+    tokenPayload?.email
+    ?? body.email ?? body.admin_email ?? body.account ?? url.searchParams.get("email") ?? ""
   ) || null;
   const actor = actorIdentifier ? await getUserByIdentifier(db, actorIdentifier) : null;
   let actionDetail = `${request.method} ${url.pathname}`;
@@ -173,94 +360,9 @@ async function recordActivity(
   ).run();
 }
 
-async function hashPassword(password: string) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw", encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: 600_000, hash: "SHA-256" },
-    key,
-    256
-  );
-  return `pbkdf2:sha256:600000$${toHex(salt)}$${toHex(new Uint8Array(bits))}`;
-}
-
-async function verifyPassword(stored: string, password: string) {
-  if (stored.startsWith("scrypt:")) {
-    const [parameters, salt, expected] = stored.split("$");
-    const [, n, r, p] = parameters.split(":");
-    const derived = await scrypt(encode(password), encode(salt), Number(n), Number(r), Number(p), 64);
-    return toHex(derived) === expected;
-  }
-
-  if (stored.startsWith("pbkdf2:sha256:")) {
-    const [parameters, saltHex, expected] = stored.split("$");
-    const iterations = Number(parameters.split(":")[2]);
-    const key = await crypto.subtle.importKey("raw", encode(password), "PBKDF2", false, ["deriveBits"]);
-    const bits = await crypto.subtle.deriveBits(
-      { name: "PBKDF2", salt: fromHex(saltHex), iterations, hash: "SHA-256" },
-      key,
-      256
-    );
-    return toHex(new Uint8Array(bits)) === expected;
-  }
-
-  return false;
-}
-
-async function verifyTurnstile(
-  token: string | undefined,
-  expectedAction: "login" | "register",
-  request: Request,
-  env: Env,
-  db: D1Database
-) {
-  const logResult = async (passed: boolean, hostname: string | null = null) => {
-    await db.prepare(
-      "INSERT INTO turnstile_verification_logs (action, passed, hostname) VALUES (?, ?, ?)"
-    ).bind(expectedAction, passed ? 1 : 0, hostname).run();
-    return passed;
-  };
-
-  if (!token || token.length > 2048 || !env.CF_TURNSTILE_SECRET_KEY) {
-    return logResult(false);
-  }
-  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ secret: env.CF_TURNSTILE_SECRET_KEY, response: token })
-  });
-  if (!response.ok) return logResult(false);
-  const result = await response.json<{
-    success?: boolean;
-    action?: string;
-    hostname?: string;
-  }>();
-  const origin = request.headers.get("Origin");
-  const expectedHostname = origin ? new URL(origin).hostname : "";
-  const passed = result.success === true
-    && result.action === expectedAction
-    && allowedTurnstileHostnames.has(result.hostname ?? "")
-    && result.hostname === expectedHostname;
-  return logResult(passed, result.hostname ?? null);
-}
-
-async function getUserByEmail(db: D1Database, email: string) {
-  return db.prepare(
-    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role FROM users WHERE email = ?"
-  ).bind(email).first<User>();
-}
-
-async function getUserByIdentifier(db: D1Database, identifier: string) {
-  return db.prepare(
-    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role " +
-    "FROM users WHERE email = ? OR username = ?"
-  ).bind(identifier, identifier).first<User>();
-}
-
-function isProtectedUser(user: User, env: Env) {
-  return user.email === env.PROTECTED_ADMIN_EMAIL || user.username === env.PROTECTED_ADMIN_USERNAME;
-}
-
+// ============================================================
+// 路由
+// ============================================================
 async function handle(request: Request, env: Env) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204 });
   const url = new URL(request.url);
@@ -270,36 +372,50 @@ async function handle(request: Request, env: Env) {
     return json({ ok: true, runtime: "cloudflare-worker" });
   }
 
+  // -------- profile（Bearer token）--------
   if (url.pathname === "/api/profile" && request.method === "GET") {
-    const email = url.searchParams.get("email");
-    if (!email) return json({ error: "未登录" }, 401);
-    const user = await getUserByEmail(env.DB, email);
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const user = await getUserByEmail(env.DB, auth.email);
     if (!user) return json({ error: "用户不存在" }, 404);
     const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE email = ?")
-      .bind(email).first<{ count: number }>();
+      .bind(user.email).first<{ count: number }>();
     return json({
       email: user.email,
       username: user.username,
       orange_balance: user.orange_balance ?? 0,
       last_sign_in_date: user.last_sign_in_date,
       sign_in_count: Number(count?.count ?? 0),
-      has_checked_in_today: user.last_sign_in_date === today(),
+      has_checked_in_today: user.last_sign_in_date === todayCN(),
       role: user.role ?? "user"
     });
   }
 
+  // -------- send-code（带发送冷却）--------
   if (url.pathname === "/api/send-code" && request.method === "POST") {
     const email = String(body.email ?? "");
     const type = body.type === "login" ? "登录" : "注册";
     if (!email) return json({ error: "没邮箱" }, 400);
     if (!env.RESEND_API_KEY) return json({ error: "服务器配置错误：缺少 RESEND_API_KEY" }, 500);
+
+    // 发送冷却：同一邮箱 60 秒内仅可发送一次
+    const last = await env.DB.prepare(
+      "SELECT created_at FROM codes WHERE email = ? ORDER BY id DESC LIMIT 1"
+    ).bind(email).first<{ created_at: string }>();
+    if (last?.created_at) {
+      const lastTs = new Date(last.created_at.replace(" ", "T") + "Z").getTime();
+      if (Number.isFinite(lastTs) && Date.now() - lastTs < SEND_CODE_COOLDOWN_MS) {
+        return json({ error: "发送过于频繁，请 60 秒后再试" }, 429);
+      }
+    }
+
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    const expiresAt = new Date(Date.now() + CODE_TTL_MS).toISOString();
     await env.DB.batch([
       env.DB.prepare("DELETE FROM codes WHERE is_used = 1 OR expires_at <= ?")
         .bind(new Date().toISOString()),
       env.DB.prepare("DELETE FROM codes WHERE email = ?").bind(email),
-      env.DB.prepare("INSERT INTO codes (email, code, expires_at) VALUES (?, ?, ?)")
+      env.DB.prepare("INSERT INTO codes (email, code, expires_at, attempts) VALUES (?, ?, ?, 0)")
         .bind(email, code, expiresAt)
     ]);
     const response = await fetch("https://api.resend.com/emails", {
@@ -320,6 +436,7 @@ async function handle(request: Request, env: Env) {
     return json({ message: "已发送" });
   }
 
+  // -------- register（签发 token）--------
   if (url.pathname === "/api/register" && request.method === "POST") {
     if (!await verifyTurnstile(body.cf_token as string | undefined, "register", request, env, env.DB)) {
       return json({ error: "人机验证失败，请重试" }, 403);
@@ -329,10 +446,10 @@ async function handle(request: Request, env: Env) {
     const password = String(body.password ?? "");
     const code = String(body.code ?? "");
     if (!email || !password || !code) return json({ error: "缺参数" }, 400);
-    const validCode = await env.DB.prepare(
-      "SELECT id FROM codes WHERE email = ? AND code = ? AND is_used = 0 AND expires_at > ? ORDER BY id DESC LIMIT 1"
-    ).bind(email, code, new Date().toISOString()).first<{ id: number }>();
+
+    const validCode = await validateCode(env.DB, email, code);
     if (!validCode) return json({ error: "码不对或过期" }, 400);
+
     try {
       await env.DB.batch([
         env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id),
@@ -340,45 +457,54 @@ async function handle(request: Request, env: Env) {
           .bind(email, username, await hashPassword(password))
       ]);
     } catch {
-      return json({ error: "注册失败" }, 500);
+      return json({ error: "该邮箱或用户名已注册" }, 400);
     }
-    return json({ message: "注册成功" }, 201);
+    const token = await createToken(env.SECRET_KEY, email, username, "user");
+    return json({ message: "注册成功", token, user: {
+      email, username, orange_balance: 0, role: "user"
+    } }, 201);
   }
 
+  // -------- login（签发 token）--------
   if (url.pathname === "/api/login" && request.method === "POST") {
     if (!await verifyTurnstile(body.cf_token as string | undefined, "login", request, env, env.DB)) {
       return json({ error: "人机验证失败，请重试" }, 403);
     }
-    if (body.method === "code") {
+    const loginMethod = String(body.method ?? "password");
+    if (loginMethod !== "password" && loginMethod !== "code") {
+      return json({ error: "不支持的登录方式" }, 400);
+    }
+
+    if (loginMethod === "code") {
       const email = String(body.email ?? "");
       const code = String(body.code ?? "");
       if (!email || !code) return json({ error: "邮箱和验证码不能为空" }, 400);
       const user = await getUserByEmail(env.DB, email);
       if (!user) return json({ error: "该邮箱未注册" }, 404);
-      const validCode = await env.DB.prepare(
-        "SELECT id FROM codes WHERE email = ? AND code = ? AND is_used = 0 AND expires_at > ?"
-      ).bind(email, code, new Date().toISOString()).first<{ id: number }>();
+      const validCode = await validateCode(env.DB, email, code);
       if (!validCode) return json({ error: "验证码错误或已过期" }, 400);
       await env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id).run();
-      return json({ message: `欢迎回来，${user.username}！`, user: {
+      const token = await createToken(env.SECRET_KEY, user.email, user.username, user.role ?? "user");
+      return json({ message: `欢迎回来，${user.username}！`, token, user: {
         email: user.email,
         username: user.username,
         orange_balance: user.orange_balance ?? 0,
         role: user.role ?? "user"
       }});
     }
+
     const account = String(body.account ?? "");
     const password = String(body.password ?? "");
     if (!account || !password) return json({ error: "账号和密码不能为空" }, 400);
-    const user = await env.DB.prepare(
-      "SELECT id, email, username, password, orange_balance, last_sign_in_date, role FROM users WHERE email = ? OR username = ?"
-    ).bind(account, account).first<User>();
+    const user = await getUserByIdentifier(env.DB, account);
     if (!user) return json({ error: "用户不存在" }, 401);
     if (!await verifyPassword(user.password, password)) return json({ error: "密码错误" }, 401);
     const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE email = ?")
       .bind(user.email).first<{ count: number }>();
+    const token = await createToken(env.SECRET_KEY, user.email, user.username, user.role ?? "user");
     return json({
       message: `欢迎回来，${user.username}！`,
+      token,
       user: {
         email: user.email,
         username: user.username,
@@ -389,43 +515,49 @@ async function handle(request: Request, env: Env) {
     });
   }
 
+  // -------- checkin（Bearer token + 东八区日期 + 唯一约束）--------
   if (url.pathname === "/api/checkin" && request.method === "POST") {
-    const email = String(body.email ?? "");
-    if (!email) return json({ error: "请先登录后再签到" }, 401);
-    const user = await getUserByEmail(env.DB, email);
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "请先登录后再签到" }, 401);
+    const user = await getUserByEmail(env.DB, auth.email);
     if (!user) return json({ error: "用户不存在" }, 404);
-    const date = today();
+    const date = todayCN();
     if (user.last_sign_in_date === date) {
       return json({ error: "今日已签到", orange_balance: user.orange_balance ?? 0 }, 409);
     }
     const balance = Number(user.orange_balance ?? 0) + 5;
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO checkin_records (email, checkin_date, points) VALUES (?, ?, 5)").bind(email, date),
-      env.DB.prepare("UPDATE users SET orange_balance = ?, last_sign_in_date = ? WHERE email = ?").bind(balance, date, email)
+      env.DB.prepare("INSERT INTO checkin_records (email, checkin_date, points) VALUES (?, ?, 5)").bind(user.email, date),
+      env.DB.prepare("UPDATE users SET orange_balance = ?, last_sign_in_date = ? WHERE email = ?").bind(balance, date, user.email)
     ]);
     const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE email = ?")
-      .bind(email).first<{ count: number }>();
+      .bind(user.email).first<{ count: number }>();
     return json({ message: "签到成功", points: 5, orange_balance: balance, last_sign_in_date: date, sign_in_count: Number(count?.count ?? 0), has_checked_in_today: true });
   }
 
+  // -------- admin/users（Bearer token + admin）--------
   if (url.pathname === "/api/admin/users" && request.method === "GET") {
-    const email = url.searchParams.get("email");
-    const admin = email ? await getUserByEmail(env.DB, email) : null;
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const admin = await getUserByEmail(env.DB, auth.email);
     if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
     const users = await env.DB.prepare("SELECT id, email, username, orange_balance, role FROM users ORDER BY id").all();
-    return json({ users: users.results });
+    return json({ users: users.results.map((u) => ({ ...u, is_protected: isProtectedUser({ email: String(u.email), username: String(u.username) }, env) })) });
   }
 
+  // -------- admin/users/update（Bearer token + 非负余额 + 保护账号）--------
   if (url.pathname === "/api/admin/users/update" && request.method === "POST") {
-    const adminEmail = String(body.admin_email ?? "");
-    const admin = await getUserByEmail(env.DB, adminEmail);
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const admin = await getUserByEmail(env.DB, auth.email);
     if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
+
     const target = await env.DB.prepare("SELECT id, email, username, orange_balance, role FROM users WHERE id = ?")
       .bind(Number(body.id)).first<User>();
     if (!target) return json({ error: "用户不存在" }, 404);
     const role = String(body.role ?? "").toLowerCase();
     if (!["admin", "user"].includes(role)) return json({ error: "角色值无效" }, 400);
-    if ((isProtectedUser(target, env) || target.email === adminEmail) && role !== "admin") {
+    if ((isProtectedUser(target, env) || target.email === admin.email) && role !== "admin") {
       return json({ error: isProtectedUser(target, env) ? "orange 账号禁止设置为普通用户" : "管理员不能将自己设置为普通用户" }, 403);
     }
     const balance = Number(body.orange_balance);
@@ -452,9 +584,11 @@ async function handle(request: Request, env: Env) {
     return json({ message: "更新成功", id: target.id, orange_balance: balance, role });
   }
 
+  // -------- admin/logs（Bearer token + activity_logs）--------
   if (url.pathname === "/api/admin/logs" && request.method === "GET") {
-    const email = url.searchParams.get("email");
-    const admin = email ? await getUserByEmail(env.DB, email) : null;
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const admin = await getUserByEmail(env.DB, auth.email);
     if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
     const logs = await env.DB.prepare(
       "SELECT id, actor_email, actor_username, action, action_detail, method, path, status, created_at " +
@@ -473,7 +607,7 @@ export default {
         ? await request.clone().json<Record<string, unknown>>()
         : {};
       const response = await handle(request, env);
-      await recordActivity(env.DB, request, response, body);
+      await recordActivity(env.DB, request, response, body, env);
       return cors(response, request);
     } catch (error) {
       console.error(error);

@@ -41,3 +41,5 @@ orange-worker/local-d1-data.sql
 
 # 3. 系统垃圾文件
 Thumbs.db
+# 临时备份目录
+.backup-*/
