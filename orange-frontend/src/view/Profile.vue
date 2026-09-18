@@ -28,7 +28,9 @@ const loadProfile = async () => {
   if (!currentUser.info?.email) return
 
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile?email=${encodeURIComponent(currentUser.info.email)}`)
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
     const result = await res.json()
     if (res.ok) {
       currentUser.setInfo({ ...currentUser.info, ...result })

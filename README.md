@@ -30,3 +30,14 @@ The dashboard documentation is available in [`cloudflare-monitor/README.zh_CN.md
 ## Contributing
 
 This is a personal project. Suggestions and issue reports are welcome.
+
+---
+
+## License & Commercial Use
+
+This project is licensed under the **GNU General Public License v3.0**.
+
+- **Open Source:** You are free to use, modify, and distribute this software for personal or non-commercial purposes, provided that you adhere to the terms of the GPLv3 (e.g., open-sourcing your modifications).
+- **Commercial Use:** If you wish to use this software for commercial purposes, closed-source modification, or private deployment without open-sourcing your code, please contact the author for a commercial license.
+
+📧 **Contact for Commercial Licensing:** 3659793158@qq.com

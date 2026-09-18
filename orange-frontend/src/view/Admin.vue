@@ -113,11 +113,7 @@ const logs = ref([])
 const logsLoading = ref(true)
 const activeTab = ref('users')
 
-const isProtectedUser = (user) => {
-  const email = (user?.email || '').trim()
-  const username = (user?.username || '').trim()
-  return email === '3659793158@qq.com' || username === 'orange'
-}
+const isProtectedUser = (user) => Boolean(user?.is_protected)
 
 const showToast = (msg, type = 'success') => {
   window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
@@ -146,7 +142,9 @@ const loadLogs = async () => {
 
   logsLoading.value = true
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/logs?email=${encodeURIComponent(currentUser.info.email)}`)
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/logs`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
     const result = await res.json()
     if (!res.ok) throw new Error(result.error || '日志加载失败')
     logs.value = result.logs || []
@@ -162,7 +160,9 @@ const loadUsers = async () => {
 
   loading.value = true
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users?email=${encodeURIComponent(currentUser.info.email)}`)
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
     const result = await res.json()
 
     if (!res.ok) {
@@ -204,9 +204,8 @@ const saveUser = async (user) => {
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/update`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser.token}` },
       body: JSON.stringify({
-        admin_email: currentUser.info.email,
         id: user.id,
         orange_balance: Number(user.orange_balance || 0),
         role: user.role

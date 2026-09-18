@@ -35,7 +35,9 @@ const fetchProfile = async () => {
   }
 
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile?email=${encodeURIComponent(currentUser.info.email)}`)
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
     const result = await res.json()
     if (res.ok) {
       currentUser.setInfo({ ...currentUser.info, ...result })
@@ -63,8 +65,7 @@ const handleCheckIn = async () => {
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/checkin`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: currentUser.info.email })
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser.token}` }
     })
     const result = await res.json()
 
