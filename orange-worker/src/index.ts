@@ -366,7 +366,9 @@ async function recordActivity(
 async function handle(request: Request, env: Env) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204 });
   const url = new URL(request.url);
-  const body = request.method === "POST" ? await request.json<Record<string, unknown>>() : {};
+  const body = request.method === "POST"
+    ? await request.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>)
+    : {};
 
   if (url.pathname === "/api/health" && request.method === "GET") {
     return json({ ok: true, runtime: "cloudflare-worker" });
