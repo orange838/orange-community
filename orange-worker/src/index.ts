@@ -604,7 +604,7 @@ export default {
   async fetch(request: Request, env: Env) {
     try {
       const body = request.method === "POST"
-        ? await request.clone().json<Record<string, unknown>>()
+        ? await request.clone().json<Record<string, unknown>>().catch(() => ({}))
         : {};
       const response = await handle(request, env);
       await recordActivity(env.DB, request, response, body, env);
