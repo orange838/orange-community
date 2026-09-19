@@ -43,3 +43,4 @@ orange-worker/local-d1-data.sql
 Thumbs.db
 # 临时备份目录
 .backup-*/
+.lingxi/
