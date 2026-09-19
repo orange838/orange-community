@@ -668,6 +668,16 @@ async def github_login(request: Request):
         payload = get_auth_user(request)
         if not payload:
             return JSONResponse({"error": "未登录"}, status_code=401)
+        bind_email = payload.get("email", bind_email)
+        state = _github_state({"mode": mode, "bindEmail": bind_email})
+        authorize_url = (
+            "https://github.com/login/oauth/authorize"
+            f"?client_id={quote(GITHUB_CLIENT_ID)}"
+            f"&redirect_uri={quote(GITHUB_REDIRECT_URI, safe='')}"
+            f"&scope={quote('read:user user:email')}"
+            f"&state={state}"
+        )
+        return JSONResponse({"authorize_url": authorize_url})
     state = _github_state({"mode": mode, "bindEmail": bind_email})
     authorize_url = (
         "https://github.com/login/oauth/authorize"

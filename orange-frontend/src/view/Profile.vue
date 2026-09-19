@@ -49,9 +49,21 @@ onMounted(() => {
   loadProfile()
 })
 
-const bindGithub = () => {
+const bindGithub = async () => {
   if (!currentUser.info?.email) return
-  window.location.href = `${import.meta.env.VITE_API_URL}/api/auth/github?mode=bind&bindEmail=${encodeURIComponent(currentUser.info.email)}`
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/github?mode=bind&bindEmail=${encodeURIComponent(currentUser.info.email)}`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+    const data = await res.json()
+    if (res.ok && data.authorize_url) {
+      window.location.href = data.authorize_url
+    } else {
+      alert(data.error || '绑定失败')
+    }
+  } catch {
+    alert('网络异常，请稍后再试')
+  }
 }
 
 const unbindGithub = async () => {
