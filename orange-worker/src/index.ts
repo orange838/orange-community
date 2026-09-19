@@ -455,11 +455,19 @@ async function handle(request: Request, env: Env) {
     }
     const mode = url.searchParams.get("mode") === "bind" ? "bind" : "login";
     if (mode === "bind") {
+      // 绑定必须已登录；绑定目标固定为当前登录邮箱，避免被注入到其他账号
       const auth = await getAuth(request, env);
       if (!auth) return json({ error: "未登录" }, 401);
+      const state = await githubState(env.SECRET_KEY, { mode, bindEmail: auth.email });
+      const authorizeUrl =
+        `https://github.com/login/oauth/authorize` +
+        `?client_id=${encodeURIComponent(env.GITHUB_CLIENT_ID)}` +
+        `&redirect_uri=${encodeURIComponent(GITHUB_REDIRECT_URI)}` +
+        `&scope=${encodeURIComponent("read:user user:email")}` +
+        `&state=${state}`;
+      return json({ authorize_url: authorizeUrl });
     }
-    const bindEmail = url.searchParams.get("bindEmail") ?? "";
-    const state = await githubState(env.SECRET_KEY, { mode, bindEmail });
+    const state = await githubState(env.SECRET_KEY, { mode: "login", bindEmail: "" });
     const authorizeUrl =
       `https://github.com/login/oauth/authorize` +
       `?client_id=${encodeURIComponent(env.GITHUB_CLIENT_ID)}` +
