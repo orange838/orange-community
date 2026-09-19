@@ -7,7 +7,8 @@ import random
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from urllib.parse import quote
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import httpx
@@ -42,6 +43,9 @@ app.add_middleware(
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 CF_SECRET_KEY = os.getenv("CF_TURNSTILE_SECRET_KEY")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+GITHUB_REDIRECT_URI = "http://127.0.0.1:8000/api/auth/github/callback"
 DATABASE = "orange_community.db"
 
 # 签到日期统一按东八区计算（与线上 worker 对齐，避免 UTC 日期错位）
@@ -145,7 +149,9 @@ def init_db():
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
         "orange_balance INTEGER DEFAULT 0, "
         "last_sign_in_date TEXT, "
-        "role TEXT DEFAULT 'user')"
+        "role TEXT DEFAULT 'user', "
+        "github_id TEXT UNIQUE, "
+        "github_username TEXT)"
     )
     c.execute(
         "CREATE TABLE IF NOT EXISTS codes "
@@ -604,13 +610,13 @@ async def get_profile(request: Request):
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
     user = c.execute(
-        "SELECT email, username, orange_balance, last_sign_in_date, role FROM users WHERE email=?",
+        "SELECT email, username, orange_balance, last_sign_in_date, role, github_username FROM users WHERE email=?",
         (email,),
     ).fetchone()
     if not user:
         conn.close()
         return JSONResponse({"error": "用户不存在"}, status_code=404)
-    email_value, username, balance, last_sign_in_date, role = user
+    email_value, username, balance, last_sign_in_date, role, github_username = user
     sign_in_count = c.execute("SELECT COUNT(*) FROM checkin_records WHERE email=?", (email_value,)).fetchone()[0]
     conn.close()
 
@@ -622,7 +628,133 @@ async def get_profile(request: Request):
         "sign_in_count": int(sign_in_count or 0),
         "has_checked_in_today": bool(last_sign_in_date == today_cn()),
         "role": role,
+        "github_username": github_username,
     }, status_code=200)
+
+# ============================================================
+# GitHub OAuth（与线上 worker 对齐）
+# ============================================================
+def _github_state(payload: dict, ttl_seconds: int = 600) -> str:
+    exp = int(datetime.now(timezone.utc).timestamp()) + ttl_seconds
+    data = {**payload, "exp": exp}
+    signing = f"{_b64url(json.dumps(data, separators=(',', ':')).encode())}"
+    sig = hmac.new(SECRET_KEY.encode(), signing.encode(), hashlib.sha256).digest()
+    return f"{signing}.{_b64url(sig)}"
+
+def _verify_github_state(state: str):
+    try:
+        parts = state.split(".")
+        if len(parts) != 2:
+            return None
+        sig = hmac.new(SECRET_KEY.encode(), parts[0].encode(), hashlib.sha256).digest()
+        if not hmac.compare_digest(_b64url(sig), parts[1]):
+            return None
+        payload = json.loads(_b64url_decode(parts[0]))
+        if payload.get("exp", 0) < datetime.now(timezone.utc).timestamp():
+            return None
+        return payload
+    except Exception:
+        return None
+
+@app.get("/api/auth/github")
+async def github_login(request: Request):
+    if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
+        return JSONResponse({"error": "GitHub 登录未配置"}, status_code=500)
+    mode = request.query_params.get("mode", "login")
+    if mode != "bind":
+        mode = "login"
+    bind_email = request.query_params.get("bindEmail", "") or ""
+    if mode == "bind":
+        payload = get_auth_user(request)
+        if not payload:
+            return JSONResponse({"error": "未登录"}, status_code=401)
+    state = _github_state({"mode": mode, "bindEmail": bind_email})
+    authorize_url = (
+        "https://github.com/login/oauth/authorize"
+        f"?client_id={quote(GITHUB_CLIENT_ID)}"
+        f"&redirect_uri={quote(GITHUB_REDIRECT_URI, safe='')}"
+        f"&scope={quote('read:user user:email')}"
+        f"&state={state}"
+    )
+    return RedirectResponse(authorize_url, status_code=302)
+
+@app.get("/api/auth/github/callback")
+async def github_callback(code: str = "", state: str = ""):
+    front_base = "http://127.0.0.1:5173"
+
+    def _redirect(hash_path: str):
+        return RedirectResponse(f"{front_base}/#{hash_path}", status_code=302)
+
+    if not code or not state:
+        return _redirect("/oauth-callback?error=missing_params")
+    parsed = _verify_github_state(state)
+    if not parsed:
+        return _redirect("/oauth-callback?error=invalid_state")
+    if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
+        return _redirect("/oauth-callback?error=not_configured")
+    try:
+        async with httpx.AsyncClient() as client:
+            tok_res = await client.post(
+                "https://github.com/login/oauth/access_token",
+                json={"client_id": GITHUB_CLIENT_ID, "client_secret": GITHUB_CLIENT_SECRET,
+                      "code": code, "redirect_uri": GITHUB_REDIRECT_URI},
+                headers={"Accept": "application/json"},
+            )
+            tok = tok_res.json()
+            access_token = tok.get("access_token")
+            if not access_token:
+                return _redirect("/oauth-callback?error=github_error")
+            gh_res = await client.get(
+                "https://api.github.com/user",
+                headers={"Authorization": f"Bearer {access_token}",
+                         "Accept": "application/vnd.github+json", "User-Agent": "orange-community"},
+            )
+            gh = gh_res.json()
+        gid = str(gh.get("id", ""))
+        gh_login = gh.get("login", "")
+
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+
+        def _success(u):
+            email_v, username, balance, role = u[1], u[2], u[3], u[4]
+            token = create_token(email_v, username, role)
+            user_json = quote(json.dumps({"email": email_v, "username": username,
+                                          "orange_balance": int(balance or 0), "role": role,
+                                          "github_username": gh_login}))
+            return _redirect(f"/oauth-callback?token={quote(token)}&user={user_json}")
+
+        row = c.execute("SELECT id, email, username, orange_balance, role FROM users WHERE github_id=?",
+                        (gid,)).fetchone()
+        if row:
+            conn.close()
+            return _success(row)
+        if parsed.get("mode") == "bind":
+            owner = c.execute("SELECT id, email, username, orange_balance, role FROM users WHERE email=?",
+                              (parsed.get("bindEmail", ""),)).fetchone()
+            if not owner:
+                conn.close()
+                return _redirect("/oauth-callback?error=bind_email_not_found")
+            c.execute("UPDATE users SET github_id=?, github_username=? WHERE email=?", (gid, gh_login, owner[1]))
+            conn.commit()
+            conn.close()
+            return _success(owner)
+        conn.close()
+        return _redirect("/oauth-callback?error=unbound")
+    except Exception:
+        return _redirect("/oauth-callback?error=github_error")
+
+@app.post("/api/auth/github/unbind")
+async def github_unbind(request: Request):
+    payload = get_auth_user(request)
+    if not payload:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    c.execute("UPDATE users SET github_id=NULL, github_username=NULL WHERE email=?", (payload.get("email"),))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"message": "已解绑 GitHub"}, status_code=200)
 
 # ============================================================
 # 签到（Bearer token + 东八区日期 + 唯一约束）

@@ -6,7 +6,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   orange_balance INTEGER DEFAULT 0,
   last_sign_in_date TEXT,
-  role TEXT DEFAULT 'user'
+  role TEXT DEFAULT 'user',
+  github_id TEXT UNIQUE,
+  github_username TEXT
 );
 
 CREATE TABLE IF NOT EXISTS codes (

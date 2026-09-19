@@ -8,6 +8,7 @@ import Checkin from '../view/CheckIn.vue'
 import Notice from '../view/Notice.vue'
 import Profile from '../view/Profile.vue'
 import Admin from '../view/Admin.vue'
+import OAuthCallback from '../view/OAuthCallback.vue'
 
 const routes = [
   // 2. 把 component 指向刚才引入的变量
@@ -15,7 +16,8 @@ const routes = [
   { path: '/checkin', component: Checkin },
   { path: '/notice', component: Notice },
   { path: '/profile', component: Profile },
-  { path: '/admin', component: Admin }
+  { path: '/admin', component: Admin },
+  { path: '/oauth-callback', component: OAuthCallback }
 ]
 
 const router = createRouter({

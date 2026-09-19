@@ -6,6 +6,8 @@ interface Env {
   RESEND_API_KEY: string;
   PROTECTED_ADMIN_EMAIL: string;
   PROTECTED_ADMIN_USERNAME: string;
+  GITHUB_CLIENT_ID: string;
+  GITHUB_CLIENT_SECRET: string;
   // JWT 签名密钥（务必配置一个随机长字符串，与本地 backend 的 SECRET_KEY 保持一致）
   SECRET_KEY: string;
 }
@@ -18,6 +20,8 @@ type User = {
   orange_balance: number;
   last_sign_in_date: string | null;
   role: "admin" | "user";
+  github_id?: string | null;
+  github_username?: string | null;
 };
 
 const json = (body: unknown, status = 200) =>
@@ -118,6 +122,7 @@ const CODE_TTL_MS = 5 * 60_000;          // 验证码 5 分钟有效
 const SEND_CODE_COOLDOWN_MS = 60_000;    // 同一邮箱 60 秒内仅可发送一次
 const CODE_MAX_ATTEMPTS = 5;             // 验证码最多尝试 5 次
 const TOKEN_TTL_HOURS = 24 * 7;          // token 7 天有效
+const GITHUB_REDIRECT_URI = "https://api.cslblog.dpdns.org/api/auth/github/callback";
 
 // ============================================================
 // JWT（HS256，无状态），与本地 backend 算法一致
@@ -177,6 +182,55 @@ function getAuth(request: Request, env: Env) {
   const auth = request.headers.get("Authorization") ?? "";
   if (!auth.startsWith("Bearer ")) return null;
   return verifyToken(env.SECRET_KEY, auth.slice(7).trim());
+}
+
+// ============================================================
+// GitHub OAuth：签名 state + 换取 token + 获取用户信息
+// ============================================================
+async function githubState(secret: string, payload: { mode: string; bindEmail?: string }) {
+  const exp = Math.floor(Date.now() / 1000) + 600; // 10 分钟内有效
+  const data = b64url(encode(JSON.stringify({ ...payload, exp })));
+  const sig = b64url(await hmacSign(secret, data));
+  return `${data}.${sig}`;
+}
+
+async function verifyGithubState(secret: string, state: string) {
+  try {
+    const parts = state.split(".");
+    if (parts.length !== 2) return null;
+    const expected = b64url(await hmacSign(secret, parts[0]));
+    if (expected !== parts[1]) return null;
+    const parsed = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[0]))) as {
+      mode: string; bindEmail?: string; exp: number;
+    };
+    if (parsed.exp < Math.floor(Date.now() / 1000)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function githubExchangeCode(clientId: string, clientSecret: string, code: string, redirectUri: string) {
+  const res = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri })
+  });
+  const data = (await res.json()) as { access_token?: string; error?: string };
+  if (!data.access_token) throw new Error(data.error ?? "github no access_token");
+  return data.access_token;
+}
+
+async function githubUser(accessToken: string) {
+  const res = await fetch("https://api.github.com/user", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "orange-community"
+    }
+  });
+  const u = (await res.json()) as { id: number; login: string; email?: string | null };
+  return u;
 }
 
 // ============================================================
@@ -389,8 +443,86 @@ async function handle(request: Request, env: Env) {
       last_sign_in_date: user.last_sign_in_date,
       sign_in_count: Number(count?.count ?? 0),
       has_checked_in_today: user.last_sign_in_date === todayCN(),
-      role: user.role ?? "user"
+      role: user.role ?? "user",
+      github_username: user.github_username ?? null
     });
+  }
+
+  // -------- GitHub OAuth --------
+  if (url.pathname === "/api/auth/github" && request.method === "GET") {
+    if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) {
+      return json({ error: "GitHub 登录未配置" }, 500);
+    }
+    const mode = url.searchParams.get("mode") === "bind" ? "bind" : "login";
+    if (mode === "bind") {
+      const auth = await getAuth(request, env);
+      if (!auth) return json({ error: "未登录" }, 401);
+    }
+    const bindEmail = url.searchParams.get("bindEmail") ?? "";
+    const state = await githubState(env.SECRET_KEY, { mode, bindEmail });
+    const authorizeUrl =
+      `https://github.com/login/oauth/authorize` +
+      `?client_id=${encodeURIComponent(env.GITHUB_CLIENT_ID)}` +
+      `&redirect_uri=${encodeURIComponent(GITHUB_REDIRECT_URI)}` +
+      `&scope=${encodeURIComponent("read:user user:email")}` +
+      `&state=${state}`;
+    return new Response(null, { status: 302, headers: { Location: authorizeUrl } });
+  }
+
+  if (url.pathname === "/api/auth/github/callback" && request.method === "GET") {
+    const frontBase = "https://cslblog.dpdns.org";
+    const redirect = (hash: string) =>
+      new Response(null, { status: 302, headers: { Location: `${frontBase}/#${hash}` } });
+    const code = url.searchParams.get("code") ?? "";
+    const state = url.searchParams.get("state") ?? "";
+    if (!code || !state) return redirect("/oauth-callback?error=missing_params");
+    const parsed = await verifyGithubState(env.SECRET_KEY, state);
+    if (!parsed) return redirect("/oauth-callback?error=invalid_state");
+    if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) return redirect("/oauth-callback?error=not_configured");
+    try {
+      const accessToken = await githubExchangeCode(
+        env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET, code, GITHUB_REDIRECT_URI
+      );
+      const gh = await githubUser(accessToken);
+      const gid = String(gh.id);
+      const user = await env.DB.prepare("SELECT * FROM users WHERE github_id = ?").bind(gid).first<User>();
+      const successRedirect = async (u: User, ghName: string) => {
+        const token = await createToken(env.SECRET_KEY, u.email, u.username, u.role ?? "user");
+        const userJson = encodeURIComponent(JSON.stringify({
+          email: u.email,
+          username: u.username,
+          orange_balance: u.orange_balance ?? 0,
+          role: u.role ?? "user",
+          github_username: ghName
+        }));
+        return redirect(`/oauth-callback?token=${encodeURIComponent(token)}&user=${userJson}`);
+      };
+      if (user) {
+        // 已绑定该 GitHub → 直接登录
+        return await successRedirect(user, gh.login);
+      }
+      if (parsed.mode === "bind") {
+        // 未绑定但发起的是绑定 → 绑定到当前登录邮箱
+        const owner = await getUserByEmail(env.DB, parsed.bindEmail ?? "");
+        if (!owner) return redirect("/oauth-callback?error=bind_email_not_found");
+        await env.DB.prepare("UPDATE users SET github_id = ?, github_username = ? WHERE email = ?")
+          .bind(gid, gh.login, owner.email).run();
+        return await successRedirect(owner, gh.login);
+      }
+      // 未绑定且是登录 → 引导先注册/绑定
+      return redirect("/oauth-callback?error=unbound");
+    } catch (e) {
+      console.error(e);
+      return redirect("/oauth-callback?error=github_error");
+    }
+  }
+
+  if (url.pathname === "/api/auth/github/unbind" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    await env.DB.prepare("UPDATE users SET github_id = NULL, github_username = NULL WHERE email = ?")
+      .bind(auth.email).run();
+    return json({ message: "已解绑 GitHub" });
   }
 
   // -------- send-code（带发送冷却）--------
