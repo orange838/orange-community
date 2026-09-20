@@ -54,6 +54,10 @@ onMounted(() => {
   loadProfile()
 })
 
+const showToast = (msg, type = 'success') => {
+  window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
+}
+
 const bindGithub = async () => {
   if (!currentUser.info?.email) return
   try {
@@ -64,10 +68,10 @@ const bindGithub = async () => {
     if (res.ok && data.authorize_url) {
       window.location.href = data.authorize_url
     } else {
-      alert(data.error || '绑定失败')
+      showToast(data.error || '绑定失败', 'error')
     }
   } catch {
-    alert('网络异常，请稍后再试')
+    showToast('网络异常，请稍后再试', 'error')
   }
 }
 
@@ -81,12 +85,12 @@ const unbindGithub = async () => {
     const result = await res.json()
     if (res.ok) {
       currentUser.setInfo({ ...currentUser.info, github_id: null, github_username: null })
-      alert(result.message || '已解绑 GitHub')
+      showToast(result.message || '已解绑 GitHub', 'success')
     } else {
-      alert(result.error || '解绑失败')
+      showToast(result.error || '解绑失败', 'error')
     }
   } catch {
-    alert('网络异常，请稍后再试')
+    showToast('网络异常，请稍后再试', 'error')
   }
 }
 
@@ -100,10 +104,10 @@ const bindCpoauth = async () => {
     if (res.ok && data.authorize_url) {
       window.location.href = data.authorize_url
     } else {
-      alert(data.error || '绑定失败')
+      showToast(data.error || '绑定失败', 'error')
     }
   } catch {
-    alert('网络异常，请稍后再试')
+    showToast('网络异常，请稍后再试', 'error')
   }
 }
 
@@ -117,12 +121,12 @@ const unbindCpoauth = async () => {
     const result = await res.json()
     if (res.ok) {
       currentUser.setInfo({ ...currentUser.info, cpoauth_id: null, cpoauth_username: null })
-      alert(result.message || '已解绑 CP OAuth')
+      showToast(result.message || '已解绑 CP OAuth', 'success')
     } else {
-      alert(result.error || '解绑失败')
+      showToast(result.error || '解绑失败', 'error')
     }
   } catch {
-    alert('网络异常，请稍后再试')
+    showToast('网络异常，请稍后再试', 'error')
   }
 }
 
