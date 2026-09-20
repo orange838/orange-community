@@ -315,7 +315,7 @@ async function verifyTurnstile(
 // ============================================================
 async function getUserByEmail(db: D1Database, email: string) {
   return db.prepare(
-    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role FROM users WHERE email = ?"
+    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, github_id, github_username FROM users WHERE email = ?"
   ).bind(email).first<User>();
 }
 
