@@ -544,7 +544,7 @@ async function handle(request: Request, env: Env) {
         return await successRedirect(owner, gh.login);
       }
       // 未绑定且是登录 → 引导先注册/绑定
-      return redirect("/oauth-callback?error=unbound");
+      return redirect("/oauth-callback?error=unbound&src=github");
     } catch (e) {
       console.error(e);
       return redirect("/oauth-callback?error=github_error");
@@ -622,7 +622,7 @@ async function handle(request: Request, env: Env) {
           .bind(cid, cpName, owner.email).run();
         return await successRedirect(owner, cpName);
       }
-      return redirect("/oauth-callback?error=unbound");
+      return redirect("/oauth-callback?error=unbound&src=cpoauth");
     } catch (e) {
       console.error(e);
       return redirect("/oauth-callback?error=github_error");

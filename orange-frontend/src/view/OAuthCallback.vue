@@ -27,7 +27,9 @@ onMounted(() => {
   if (error) {
     message.value = '操作未完成'
     if (error === 'unbound') {
-      errorText.value = '该 GitHub 账号尚未绑定社区账号。请先注册或登录社区，再到「个人信息」页绑定 GitHub 后，即可用 GitHub 一键登录。'
+      const src = route.query.src || 'github'
+      const pn = src === 'cpoauth' ? 'CP OAuth' : 'GitHub'
+      errorText.value = `该${pn}账号尚未绑定社区账号。请先注册或登录社区，再到「个人信息」页绑定${pn}后，即可用${pn}一键登录。`
     } else if (error === 'invalid_state') {
       errorText.value = '授权状态校验失败，请重新操作。'
     } else if (error === 'bind_email_not_found') {
