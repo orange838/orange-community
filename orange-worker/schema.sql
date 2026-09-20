@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS users (
   last_sign_in_date TEXT,
   role TEXT DEFAULT 'user',
   github_id TEXT UNIQUE,
-  github_username TEXT
+  github_username TEXT,
+  cpoauth_id TEXT UNIQUE,
+  cpoauth_username TEXT
 );
 
 CREATE TABLE IF NOT EXISTS codes (

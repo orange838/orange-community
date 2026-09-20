@@ -8,6 +8,8 @@ interface Env {
   PROTECTED_ADMIN_USERNAME: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
+  CPOAUTH_CLIENT_ID: string;
+  CPOAUTH_CLIENT_SECRET: string;
   // JWT 签名密钥（务必配置一个随机长字符串，与本地 backend 的 SECRET_KEY 保持一致）
   SECRET_KEY: string;
 }
@@ -22,6 +24,8 @@ type User = {
   role: "admin" | "user";
   github_id?: string | null;
   github_username?: string | null;
+  cpoauth_id?: string | null;
+  cpoauth_username?: string | null;
 };
 
 const json = (body: unknown, status = 200) =>
@@ -123,6 +127,8 @@ const SEND_CODE_COOLDOWN_MS = 60_000;    // 同一邮箱 60 秒内仅可发送�
 const CODE_MAX_ATTEMPTS = 5;             // 验证码最多尝试 5 次
 const TOKEN_TTL_HOURS = 24 * 7;          // token 7 天有效
 const GITHUB_REDIRECT_URI = "https://api.cslblog.dpdns.org/api/auth/github/callback";
+const CPOAUTH_REDIRECT_URI = "https://api.cslblog.dpdns.org/api/auth/cpoauth/callback";
+const CPOAUTH_AUTHORIZE_URL = "https://www.cpoauth.com/oauth/authorize";
 
 // ============================================================
 // JWT（HS256，无状态），与本地 backend 算法一致
@@ -233,6 +239,25 @@ async function githubUser(accessToken: string) {
   return u;
 }
 
+async function cpoauthExchangeCode(clientId: string, clientSecret: string, code: string, redirectUri: string) {
+  const res = await fetch("https://www.cpoauth.com/api/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ grant_type: "authorization_code", code, redirect_uri: redirectUri, client_id: clientId, client_secret: clientSecret })
+  });
+  const data = (await res.json()) as { access_token?: string; error?: string };
+  if (!data.access_token) throw new Error(data.error ?? "cpoauth no access_token");
+  return data.access_token;
+}
+
+async function cpoauthUser(accessToken: string) {
+  const res = await fetch("https://www.cpoauth.com/api/oauth/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
+  });
+  const u = (await res.json()) as { sub?: string; username?: string; display_name?: string };
+  return u;
+}
+
 // ============================================================
 // 密码哈希：与本地 backend 一致 pbkdf2:sha256:600000$saltHex$keyHex
 // ============================================================
@@ -315,7 +340,7 @@ async function verifyTurnstile(
 // ============================================================
 async function getUserByEmail(db: D1Database, email: string) {
   return db.prepare(
-    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, github_id, github_username FROM users WHERE email = ?"
+    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, github_id, github_username, cpoauth_id, cpoauth_username FROM users WHERE email = ?"
   ).bind(email).first<User>();
 }
 
@@ -444,7 +469,8 @@ async function handle(request: Request, env: Env) {
       sign_in_count: Number(count?.count ?? 0),
       has_checked_in_today: user.last_sign_in_date === todayCN(),
       role: user.role ?? "user",
-      github_username: user.github_username ?? null
+      github_username: user.github_username ?? null,
+      cpoauth_username: user.cpoauth_username ?? null
     });
   }
 
@@ -531,6 +557,84 @@ async function handle(request: Request, env: Env) {
     await env.DB.prepare("UPDATE users SET github_id = NULL, github_username = NULL WHERE email = ?")
       .bind(auth.email).run();
     return json({ message: "已解绑 GitHub" });
+  }
+
+  // -------- CP OAuth --------
+  if (url.pathname === "/api/auth/cpoauth" && request.method === "GET") {
+    if (!env.CPOAUTH_CLIENT_ID || !env.CPOAUTH_CLIENT_SECRET) {
+      return json({ error: "CP OAuth 登录未配置" }, 500);
+    }
+    const mode = url.searchParams.get("mode") === "bind" ? "bind" : "login";
+    const buildAuthUrl = (state: string) =>
+      `${CPOAUTH_AUTHORIZE_URL}?response_type=code` +
+      `&client_id=${encodeURIComponent(env.CPOAUTH_CLIENT_ID)}` +
+      `&redirect_uri=${encodeURIComponent(CPOAUTH_REDIRECT_URI)}` +
+      `&scope=${encodeURIComponent("openid profile")}` +
+      `&state=${state}`;
+    if (mode === "bind") {
+      const auth = await getAuth(request, env);
+      if (!auth) return json({ error: "未登录" }, 401);
+      const state = await githubState(env.SECRET_KEY, { mode, bindEmail: auth.email });
+      return json({ authorize_url: buildAuthUrl(state) });
+    }
+    const state = await githubState(env.SECRET_KEY, { mode: "login", bindEmail: "" });
+    return new Response(null, { status: 302, headers: { Location: buildAuthUrl(state) } });
+  }
+
+  if (url.pathname === "/api/auth/cpoauth/callback" && request.method === "GET") {
+    const frontBase = "https://cslblog.dpdns.org";
+    const redirect = (hash: string) =>
+      new Response(null, { status: 302, headers: { Location: `${frontBase}/#${hash}` } });
+    const code = url.searchParams.get("code") ?? "";
+    const state = url.searchParams.get("state") ?? "";
+    if (!code || !state) return redirect("/oauth-callback?error=missing_params");
+    const parsed = await verifyGithubState(env.SECRET_KEY, state);
+    if (!parsed) return redirect("/oauth-callback?error=invalid_state");
+    if (!env.CPOAUTH_CLIENT_ID || !env.CPOAUTH_CLIENT_SECRET) return redirect("/oauth-callback?error=not_configured");
+    try {
+      const accessToken = await cpoauthExchangeCode(
+        env.CPOAUTH_CLIENT_ID, env.CPOAUTH_CLIENT_SECRET, code, CPOAUTH_REDIRECT_URI
+      );
+      const cp = await cpoauthUser(accessToken);
+      const cid = cp.sub ?? cp.username ?? "";
+      if (!cid) return redirect("/oauth-callback?error=github_error");
+      const cpName = cp.username ?? cp.display_name ?? cid;
+      const user = await env.DB.prepare("SELECT * FROM users WHERE cpoauth_id = ?").bind(cid).first<User>();
+      const successRedirect = async (u: User, cpName2: string) => {
+        const token = await createToken(env.SECRET_KEY, u.email, u.username, u.role ?? "user");
+        const userJson = encodeURIComponent(JSON.stringify({
+          email: u.email,
+          username: u.username,
+          orange_balance: u.orange_balance ?? 0,
+          role: u.role ?? "user",
+          github_username: u.github_username ?? null,
+          cpoauth_username: cpName2
+        }));
+        return redirect(`/oauth-callback?token=${encodeURIComponent(token)}&user=${userJson}`);
+      };
+      if (user) {
+        return await successRedirect(user, cpName);
+      }
+      if (parsed.mode === "bind") {
+        const owner = await getUserByEmail(env.DB, parsed.bindEmail ?? "");
+        if (!owner) return redirect("/oauth-callback?error=bind_email_not_found");
+        await env.DB.prepare("UPDATE users SET cpoauth_id = ?, cpoauth_username = ? WHERE email = ?")
+          .bind(cid, cpName, owner.email).run();
+        return await successRedirect(owner, cpName);
+      }
+      return redirect("/oauth-callback?error=unbound");
+    } catch (e) {
+      console.error(e);
+      return redirect("/oauth-callback?error=github_error");
+    }
+  }
+
+  if (url.pathname === "/api/auth/cpoauth/unbind" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    await env.DB.prepare("UPDATE users SET cpoauth_id = NULL, cpoauth_username = NULL WHERE email = ?")
+      .bind(auth.email).run();
+    return json({ message: "已解绑 CP OAuth" });
   }
 
   // -------- send-code（带发送冷却）--------

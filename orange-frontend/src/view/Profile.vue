@@ -14,6 +14,11 @@
           <button v-if="!currentUser.info.github_username" class="bind-btn" @click="bindGithub">绑定 GitHub</button>
           <button v-else class="unbind-btn" @click="unbindGithub">解绑</button>
         </div>
+        <div class="github-bind">
+          <span>CP OAuth：{{ currentUser.info.cpoauth_username ? ('已绑定 @' + currentUser.info.cpoauth_username) : '未绑定' }}</span>
+          <button v-if="!currentUser.info.cpoauth_username" class="bind-btn" @click="bindCpoauth">绑定 CP OAuth</button>
+          <button v-else class="unbind-btn" @click="unbindCpoauth">解绑</button>
+        </div>
       </template>
       <template v-else>
         <p>当前状态：<span style="color: #909399;">未登录</span></p>
@@ -77,6 +82,42 @@ const unbindGithub = async () => {
     if (res.ok) {
       currentUser.setInfo({ ...currentUser.info, github_id: null, github_username: null })
       alert(result.message || '已解绑 GitHub')
+    } else {
+      alert(result.error || '解绑失败')
+    }
+  } catch {
+    alert('网络异常，请稍后再试')
+  }
+}
+
+const bindCpoauth = async () => {
+  if (!currentUser.info?.email) return
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/cpoauth?mode=bind&bindEmail=${encodeURIComponent(currentUser.info.email)}`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+    const data = await res.json()
+    if (res.ok && data.authorize_url) {
+      window.location.href = data.authorize_url
+    } else {
+      alert(data.error || '绑定失败')
+    }
+  } catch {
+    alert('网络异常，请稍后再试')
+  }
+}
+
+const unbindCpoauth = async () => {
+  if (!currentUser.info?.email) return
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/cpoauth/unbind`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+    const result = await res.json()
+    if (res.ok) {
+      currentUser.setInfo({ ...currentUser.info, cpoauth_id: null, cpoauth_username: null })
+      alert(result.message || '已解绑 CP OAuth')
     } else {
       alert(result.error || '解绑失败')
     }

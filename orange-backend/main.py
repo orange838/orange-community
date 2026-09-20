@@ -46,6 +46,9 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_REDIRECT_URI = "http://127.0.0.1:8000/api/auth/github/callback"
+CPOAUTH_CLIENT_ID = os.getenv("CPOAUTH_CLIENT_ID", "")
+CPOAUTH_CLIENT_SECRET = os.getenv("CPOAUTH_CLIENT_SECRET", "")
+CPOAUTH_REDIRECT_URI = "http://127.0.0.1:8000/api/auth/cpoauth/callback"
 DATABASE = "orange_community.db"
 
 # 签到日期统一按东八区计算（与线上 worker 对齐，避免 UTC 日期错位）
@@ -151,7 +154,9 @@ def init_db():
         "last_sign_in_date TEXT, "
         "role TEXT DEFAULT 'user', "
         "github_id TEXT UNIQUE, "
-        "github_username TEXT)"
+        "github_username TEXT, "
+        "cpoauth_id TEXT UNIQUE, "
+        "cpoauth_username TEXT)"
     )
     c.execute(
         "CREATE TABLE IF NOT EXISTS codes "
@@ -610,13 +615,13 @@ async def get_profile(request: Request):
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
     user = c.execute(
-        "SELECT email, username, orange_balance, last_sign_in_date, role, github_username FROM users WHERE email=?",
+        "SELECT email, username, orange_balance, last_sign_in_date, role, github_username, cpoauth_username FROM users WHERE email=?",
         (email,),
     ).fetchone()
     if not user:
         conn.close()
         return JSONResponse({"error": "用户不存在"}, status_code=404)
-    email_value, username, balance, last_sign_in_date, role, github_username = user
+    email_value, username, balance, last_sign_in_date, role, github_username, cpoauth_username = user
     sign_in_count = c.execute("SELECT COUNT(*) FROM checkin_records WHERE email=?", (email_value,)).fetchone()[0]
     conn.close()
 
@@ -629,6 +634,7 @@ async def get_profile(request: Request):
         "has_checked_in_today": bool(last_sign_in_date == today_cn()),
         "role": role,
         "github_username": github_username,
+        "cpoauth_username": cpoauth_username,
     }, status_code=200)
 
 # ============================================================
@@ -765,6 +771,122 @@ async def github_unbind(request: Request):
     conn.commit()
     conn.close()
     return JSONResponse({"message": "已解绑 GitHub"}, status_code=200)
+
+# ============================================================
+# CP OAuth（与线上 worker 对齐）
+# ============================================================
+@app.get("/api/auth/cpoauth")
+async def cpoauth_login(request: Request):
+    if not CPOAUTH_CLIENT_ID or not CPOAUTH_CLIENT_SECRET:
+        return JSONResponse({"error": "CP OAuth 登录未配置"}, status_code=500)
+    mode = request.query_params.get("mode", "login")
+    if mode != "bind":
+        mode = "login"
+    bind_email = request.query_params.get("bindEmail", "") or ""
+    if mode == "bind":
+        payload = get_auth_user(request)
+        if not payload:
+            return JSONResponse({"error": "未登录"}, status_code=401)
+        bind_email = payload.get("email", bind_email)
+        state = _github_state({"mode": mode, "bindEmail": bind_email})
+        authorize_url = (
+            "https://www.cpoauth.com/oauth/authorize"
+            f"?response_type=code&client_id={quote(CPOAUTH_CLIENT_ID)}"
+            f"&redirect_uri={quote(CPOAUTH_REDIRECT_URI, safe='')}"
+            f"&scope={quote('openid profile')}"
+            f"&state={state}"
+        )
+        return JSONResponse({"authorize_url": authorize_url})
+    state = _github_state({"mode": mode, "bindEmail": bind_email})
+    authorize_url = (
+        "https://www.cpoauth.com/oauth/authorize"
+        f"?response_type=code&client_id={quote(CPOAUTH_CLIENT_ID)}"
+        f"&redirect_uri={quote(CPOAUTH_REDIRECT_URI, safe='')}"
+        f"&scope={quote('openid profile')}"
+        f"&state={state}"
+    )
+    return RedirectResponse(authorize_url, status_code=302)
+
+@app.get("/api/auth/cpoauth/callback")
+async def cpoauth_callback(code: str = "", state: str = ""):
+    front_base = "http://127.0.0.1:5173"
+
+    def _redirect(hash_path: str):
+        return RedirectResponse(f"{front_base}/#{hash_path}", status_code=302)
+
+    if not code or not state:
+        return _redirect("/oauth-callback?error=missing_params")
+    parsed = _verify_github_state(state)
+    if not parsed:
+        return _redirect("/oauth-callback?error=invalid_state")
+    if not CPOAUTH_CLIENT_ID or not CPOAUTH_CLIENT_SECRET:
+        return _redirect("/oauth-callback?error=not_configured")
+    try:
+        async with httpx.AsyncClient() as client:
+            tok_res = await client.post(
+                "https://www.cpoauth.com/api/oauth/token",
+                json={"grant_type": "authorization_code", "code": code,
+                      "redirect_uri": CPOAUTH_REDIRECT_URI,
+                      "client_id": CPOAUTH_CLIENT_ID, "client_secret": CPOAUTH_CLIENT_SECRET},
+                headers={"Accept": "application/json"},
+            )
+            tok = tok_res.json()
+            access_token = tok.get("access_token")
+            if not access_token:
+                return _redirect("/oauth-callback?error=github_error")
+            ui_res = await client.get(
+                "https://www.cpoauth.com/api/oauth/userinfo",
+                headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            )
+            cp = ui_res.json()
+        cid = str(cp.get("sub") or cp.get("username") or "")
+        if not cid:
+            return _redirect("/oauth-callback?error=github_error")
+        cp_name = cp.get("username") or cp.get("display_name") or cid
+
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+
+        def _success(u):
+            email_v, username, balance, role = u[1], u[2], u[3], u[4]
+            token = create_token(email_v, username, role)
+            user_json = quote(json.dumps({"email": email_v, "username": username,
+                                          "orange_balance": int(balance or 0), "role": role,
+                                          "github_username": u[5] if len(u) > 5 else None,
+                                          "cpoauth_username": cp_name}))
+            return _redirect(f"/oauth-callback?token={quote(token)}&user={user_json}")
+
+        row = c.execute("SELECT id, email, username, orange_balance, role, github_username FROM users WHERE cpoauth_id=?",
+                        (cid,)).fetchone()
+        if row:
+            conn.close()
+            return _success(row)
+        if parsed.get("mode") == "bind":
+            owner = c.execute("SELECT id, email, username, orange_balance, role, github_username FROM users WHERE email=?",
+                              (parsed.get("bindEmail", ""),)).fetchone()
+            if not owner:
+                conn.close()
+                return _redirect("/oauth-callback?error=bind_email_not_found")
+            c.execute("UPDATE users SET cpoauth_id=?, cpoauth_username=? WHERE email=?", (cid, cp_name, owner[1]))
+            conn.commit()
+            conn.close()
+            return _success(owner)
+        conn.close()
+        return _redirect("/oauth-callback?error=unbound")
+    except Exception:
+        return _redirect("/oauth-callback?error=github_error")
+
+@app.post("/api/auth/cpoauth/unbind")
+async def cpoauth_unbind(request: Request):
+    payload = get_auth_user(request)
+    if not payload:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    c.execute("UPDATE users SET cpoauth_id=NULL, cpoauth_username=NULL WHERE email=?", (payload.get("email"),))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"message": "已解绑 CP OAuth"}, status_code=200)
 
 # ============================================================
 # 签到（Bearer token + 东八区日期 + 唯一约束）
