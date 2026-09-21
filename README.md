@@ -25,7 +25,7 @@ Orange Community combines technical articles, personal notes, and community feat
 
 The monitoring dashboard summarizes the project's service status, including API health, Pages domains, D1 usage, HTTPS status, Git information, and Turnstile verification metrics.
 
-The dashboard documentation is available in [`cloudflare-monitor/README.zh_CN.md`](./cloudflare-monitor/README.zh_CN.md).
+The dashboard documentation is available in [`cloudflare-monitor/README.zh_CN.md`](./cloudflare-monitor/README.md).
 
 ## Contributing
 
