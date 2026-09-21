@@ -730,11 +730,14 @@ async function handle(request: Request, env: Env) {
       const validCode = await validateCode(env.DB, email, code);
       if (!validCode) return json({ error: "验证码错误或已过期" }, 400);
       await env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id).run();
+      const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE email = ?")
+        .bind(user.email).first<{ count: number }>();
       const token = await createToken(env.SECRET_KEY, user.email, user.username, user.role ?? "user");
       return json({ message: `欢迎回来，${user.username}！`, token, user: {
         email: user.email,
         username: user.username,
         orange_balance: user.orange_balance ?? 0,
+        sign_in_count: Number(count?.count ?? 0),
         role: user.role ?? "user"
       }});
     }
