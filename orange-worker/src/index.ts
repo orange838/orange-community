@@ -262,17 +262,17 @@ async function cpoauthUser(accessToken: string) {
 }
 
 // ============================================================
-// 密码哈希：与本地 backend 一致 pbkdf2:sha256:600000$saltHex$keyHex
+// 密码哈希：与本地 backend 一致 pbkdf2:sha256:100000$saltHex$keyHex
 // ============================================================
 async function hashPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await crypto.subtle.importKey("raw", encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: 600_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt, iterations: 100_000, hash: "SHA-256" },
     key,
     256
   );
-  return `pbkdf2:sha256:600000$${toHex(salt)}$${toHex(new Uint8Array(bits))}`;
+  return `pbkdf2:sha256:100000$${toHex(salt)}$${toHex(new Uint8Array(bits))}`;
 }
 
 async function verifyPassword(stored: string, password: string) {
