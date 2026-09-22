@@ -59,17 +59,17 @@ CODE_MAX_ATTEMPTS = 5
 TOKEN_TTL_HOURS = 24 * 7
 
 # ============================================================
-# 密码哈希：与线上 worker 完全一致 pbkdf2:sha256:600000$saltHex$keyHex
+# 密码哈希：与线上 worker 完全一致 pbkdf2:sha256:100000$saltHex$keyHex
 # ============================================================
 def hash_password(password: str) -> str:
     salt = os.urandom(16)
-    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 600000, dklen=32)
-    return f"pbkdf2:sha256:600000${salt.hex()}${key.hex()}"
+    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100000, dklen=32)
+    return f"pbkdf2:sha256:100000${salt.hex()}${key.hex()}"
 
 def verify_password(stored: str, password: str) -> bool:
     if not stored:
         return False
-    # 新格式：pbkdf2:sha256:600000$saltHex$keyHex
+    # 新格式：pbkdf2:sha256:100000$saltHex$keyHex
     if stored.startswith("pbkdf2:sha256:"):
         try:
             parts = stored.split("$")
