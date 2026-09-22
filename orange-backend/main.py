@@ -137,6 +137,24 @@ def get_auth_user(request: Request):
         return None
     return verify_token(auth[7:].strip())
 
+
+def _user_by_payload(payload):
+    """优先按 email，email 为空（邀请注册的无邮箱用户）则按 username。返回用户行或 None。"""
+    email = (payload or {}).get("email") or ""
+    conn = sqlite3.connect(DATABASE)
+    try:
+        if email:
+            return conn.execute(
+                "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, github_username, cpoauth_username FROM users WHERE email=?",
+                (email,),
+            ).fetchone()
+        return conn.execute(
+            "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, github_username, cpoauth_username FROM users WHERE username=?",
+            ((payload or {}).get("username", ""),),
+        ).fetchone()
+    finally:
+        conn.close()
+
 # ============================================================
 # 数据库初始化（与线上 schema.sql 对齐，含 activity_logs / turnstile 日志）
 # ============================================================
@@ -146,7 +164,7 @@ def init_db():
     c.execute(
         "CREATE TABLE IF NOT EXISTS users "
         "(id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "email TEXT UNIQUE NOT NULL, "
+        "email TEXT UNIQUE, "
         "username TEXT NOT NULL, "
         "password TEXT NOT NULL, "
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
@@ -171,10 +189,21 @@ def init_db():
     c.execute(
         "CREATE TABLE IF NOT EXISTS checkin_records "
         "(id INTEGER PRIMARY KEY AUTOINCREMENT, "
-        "email TEXT NOT NULL, "
+        "user_id INTEGER NOT NULL, "
         "checkin_date TEXT NOT NULL, "
         "points INTEGER DEFAULT 5, "
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    )
+    c.execute(
+        "CREATE TABLE IF NOT EXISTS invite_codes "
+        "(id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "code TEXT UNIQUE NOT NULL, "
+        "created_by TEXT, "
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+        "expires_at TIMESTAMP, "
+        "used_by INTEGER, "
+        "used_at TIMESTAMP, "
+        "status TEXT DEFAULT 'active')"
     )
     c.execute(
         "CREATE TABLE IF NOT EXISTS admin_audit_logs "
@@ -232,7 +261,7 @@ def init_db():
 
     # 签到唯一约束（与线上 schema.sql 的 UNIQUE(email, checkin_date) 对齐，防并发刷分）
     try:
-        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_checkin_email_date ON checkin_records(email, checkin_date)")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_checkin_user_date ON checkin_records(user_id, checkin_date)")
     except sqlite3.OperationalError:
         pass
 
@@ -339,6 +368,12 @@ def record_activity(request: Request, response: JSONResponse):
         action_detail = "查看最近 100 条操作日志"
     elif url_path == "/api/admin/users/update":
         action_detail = f"提交用户修改：橙子数量 {body.get('orange_balance', '未提供')}，角色 {body.get('role', '')}"
+    elif url_path == "/api/register/invite":
+        action_detail = f"邀请注册账号 {body.get('username') or '新用户'}"
+    elif url_path == "/api/user/bind-email":
+        action_detail = f"绑定邮箱 {body.get('email') or ''}" if response.status_code == 200 else "尝试绑定邮箱"
+    elif url_path == "/api/admin/invites":
+        action_detail = "生成邀请码" if request.method == "POST" else "查看邀请码列表"
 
     action_name = {
         "/api/profile": "查看个人信息",
@@ -346,9 +381,12 @@ def record_activity(request: Request, response: JSONResponse):
         "/api/register": "注册账号",
         "/api/login": "登录账号",
         "/api/checkin": "签到",
+        "/api/register/invite": "邀请注册",
+        "/api/user/bind-email": "绑定邮箱",
         "/api/admin/users": "查看用户管理",
         "/api/admin/users/update": "修改用户信息",
         "/api/admin/logs": "查看操作日志",
+        "/api/admin/invites": "管理邀请码",
     }.get(url_path, "访问接口")
 
     try:
@@ -582,11 +620,12 @@ async def login(request: Request):
         conn.commit()
     conn.close()
 
+    uid = user[0]
     email = user[1]
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    sign_in_count = c.execute("SELECT COUNT(*) FROM checkin_records WHERE email=?", (email,)).fetchone()[0]
-    balance = c.execute("SELECT orange_balance FROM users WHERE email=?", (email,)).fetchone()[0]
+    sign_in_count = c.execute("SELECT COUNT(*) FROM checkin_records WHERE user_id=?", (uid,)).fetchone()[0]
+    balance = c.execute("SELECT orange_balance FROM users WHERE id=?", (uid,)).fetchone()[0]
     conn.close()
 
     role = user[4] if len(user) > 4 else "user"
@@ -595,7 +634,8 @@ async def login(request: Request):
         "message": f"欢迎回来，{user[2]}！",
         "token": token,
         "user": {
-            "email": email,
+            "email": email or None,
+            "has_email": bool(email),
             "username": user[2],
             "orange_balance": int(balance or 0),
             "sign_in_count": int(sign_in_count or 0),
@@ -611,22 +651,18 @@ async def get_profile(request: Request):
     payload = get_auth_user(request)
     if not payload:
         return JSONResponse({"error": "未登录"}, status_code=401)
-    email = payload.get("email")
+    user = _user_by_payload(payload)
+    if not user:
+        return JSONResponse({"error": "用户不存在"}, status_code=404)
+    uid, email_value, username, _pw, balance, last_sign_in_date, role, github_username, cpoauth_username = user
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    user = c.execute(
-        "SELECT email, username, orange_balance, last_sign_in_date, role, github_username, cpoauth_username FROM users WHERE email=?",
-        (email,),
-    ).fetchone()
-    if not user:
-        conn.close()
-        return JSONResponse({"error": "用户不存在"}, status_code=404)
-    email_value, username, balance, last_sign_in_date, role, github_username, cpoauth_username = user
-    sign_in_count = c.execute("SELECT COUNT(*) FROM checkin_records WHERE email=?", (email_value,)).fetchone()[0]
+    sign_in_count = c.execute("SELECT COUNT(*) FROM checkin_records WHERE user_id=?", (uid,)).fetchone()[0]
     conn.close()
 
     return JSONResponse({
         "email": email_value,
+        "has_email": bool(email_value),
         "username": username,
         "orange_balance": int(balance or 0),
         "last_sign_in_date": last_sign_in_date,
@@ -674,8 +710,10 @@ async def github_login(request: Request):
         payload = get_auth_user(request)
         if not payload:
             return JSONResponse({"error": "未登录"}, status_code=401)
-        bind_email = payload.get("email", bind_email)
-        state = _github_state({"mode": mode, "bindEmail": bind_email})
+        bind_user = _user_by_payload(payload)
+        if not bind_user:
+            return JSONResponse({"error": "未登录"}, status_code=401)
+        state = _github_state({"mode": mode, "bindEmail": payload.get("email", bind_email), "bindUserId": bind_user[0]})
         authorize_url = (
             "https://github.com/login/oauth/authorize"
             f"?client_id={quote(GITHUB_CLIENT_ID)}"
@@ -746,12 +784,12 @@ async def github_callback(code: str = "", state: str = ""):
             conn.close()
             return _success(row)
         if parsed.get("mode") == "bind":
-            owner = c.execute("SELECT id, email, username, orange_balance, role FROM users WHERE email=?",
-                              (parsed.get("bindEmail", ""),)).fetchone()
+            owner = (c.execute("SELECT id, email, username, orange_balance, role FROM users WHERE id=?",
+                              (parsed.get("bindUserId"),)).fetchone() if parsed.get("bindUserId") else None)
             if not owner:
                 conn.close()
                 return _redirect("/oauth-callback?error=bind_email_not_found")
-            c.execute("UPDATE users SET github_id=?, github_username=? WHERE email=?", (gid, gh_login, owner[1]))
+            c.execute("UPDATE users SET github_id=?, github_username=? WHERE id=?", (gid, gh_login, owner[0]))
             conn.commit()
             conn.close()
             return _success(owner)
@@ -765,9 +803,12 @@ async def github_unbind(request: Request):
     payload = get_auth_user(request)
     if not payload:
         return JSONResponse({"error": "未登录"}, status_code=401)
+    user = _user_by_payload(payload)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    c.execute("UPDATE users SET github_id=NULL, github_username=NULL WHERE email=?", (payload.get("email"),))
+    c.execute("UPDATE users SET github_id=NULL, github_username=NULL WHERE id=?", (user[0],))
     conn.commit()
     conn.close()
     return JSONResponse({"message": "已解绑 GitHub"}, status_code=200)
@@ -787,8 +828,10 @@ async def cpoauth_login(request: Request):
         payload = get_auth_user(request)
         if not payload:
             return JSONResponse({"error": "未登录"}, status_code=401)
-        bind_email = payload.get("email", bind_email)
-        state = _github_state({"mode": mode, "bindEmail": bind_email})
+        bind_user = _user_by_payload(payload)
+        if not bind_user:
+            return JSONResponse({"error": "未登录"}, status_code=401)
+        state = _github_state({"mode": mode, "bindEmail": payload.get("email", bind_email), "bindUserId": bind_user[0]})
         authorize_url = (
             "https://www.cpoauth.com/oauth/authorize"
             f"?response_type=code&client_id={quote(CPOAUTH_CLIENT_ID)}"
@@ -862,12 +905,12 @@ async def cpoauth_callback(code: str = "", state: str = ""):
             conn.close()
             return _success(row)
         if parsed.get("mode") == "bind":
-            owner = c.execute("SELECT id, email, username, orange_balance, role, github_username FROM users WHERE email=?",
-                              (parsed.get("bindEmail", ""),)).fetchone()
+            owner = (c.execute("SELECT id, email, username, orange_balance, role, github_username FROM users WHERE id=?",
+                              (parsed.get("bindUserId"),)).fetchone() if parsed.get("bindUserId") else None)
             if not owner:
                 conn.close()
                 return _redirect("/oauth-callback?error=bind_email_not_found")
-            c.execute("UPDATE users SET cpoauth_id=?, cpoauth_username=? WHERE email=?", (cid, cp_name, owner[1]))
+            c.execute("UPDATE users SET cpoauth_id=?, cpoauth_username=? WHERE id=?", (cid, cp_name, owner[0]))
             conn.commit()
             conn.close()
             return _success(owner)
@@ -881,9 +924,12 @@ async def cpoauth_unbind(request: Request):
     payload = get_auth_user(request)
     if not payload:
         return JSONResponse({"error": "未登录"}, status_code=401)
+    user = _user_by_payload(payload)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    c.execute("UPDATE users SET cpoauth_id=NULL, cpoauth_username=NULL WHERE email=?", (payload.get("email"),))
+    c.execute("UPDATE users SET cpoauth_id=NULL, cpoauth_username=NULL WHERE id=?", (user[0],))
     conn.commit()
     conn.close()
     return JSONResponse({"message": "已解绑 CP OAuth"}, status_code=200)
@@ -896,39 +942,35 @@ async def checkin(request: Request):
     payload = get_auth_user(request)
     if not payload:
         return JSONResponse({"error": "请先登录后再签到"}, status_code=401)
-    email = payload.get("email")
+    user = _user_by_payload(payload)
+    if not user:
+        return JSONResponse({"error": "用户不存在"}, status_code=404)
+    uid, email, username, balance, last_sign_in_date = user[0], user[1], user[2], user[4], user[5]
 
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    user = c.execute(
-        "SELECT id, email, username, orange_balance, last_sign_in_date FROM users WHERE email=?",
-        (email,),
-    ).fetchone()
-    if not user:
-        conn.close()
-        return JSONResponse({"error": "用户不存在"}, status_code=404)
 
     today = today_cn()
-    if user[4] == today:
+    if last_sign_in_date == today:
         sign_in_count = c.execute(
-            "SELECT COUNT(*) FROM checkin_records WHERE email=? AND checkin_date=?", (email, today)
+            "SELECT COUNT(*) FROM checkin_records WHERE user_id=? AND checkin_date=?", (uid, today)
         ).fetchone()[0]
         conn.close()
         return JSONResponse(
-            {"error": "今日已签到", "sign_in_count": int(sign_in_count or 0), "orange_balance": int(user[3] or 0)},
+            {"error": "今日已签到", "sign_in_count": int(sign_in_count or 0), "orange_balance": int(balance or 0)},
             status_code=409,
         )
 
     reward = 5
-    new_balance = int(user[3] or 0) + reward
+    new_balance = int(balance or 0) + reward
     try:
-        c.execute("INSERT INTO checkin_records (email, checkin_date, points) VALUES (?, ?, ?)", (email, today, reward))
+        c.execute("INSERT INTO checkin_records (user_id, checkin_date, points) VALUES (?, ?, ?)", (uid, today, reward))
     except sqlite3.IntegrityError:
         conn.close()
         return JSONResponse({"error": "今日已签到"}, status_code=409)
-    c.execute("UPDATE users SET orange_balance=?, last_sign_in_date=? WHERE email=?", (new_balance, today, email))
+    c.execute("UPDATE users SET orange_balance=?, last_sign_in_date=? WHERE id=?", (new_balance, today, uid))
     conn.commit()
-    sign_in_count = c.execute("SELECT COUNT(*) FROM checkin_records WHERE email=?", (email,)).fetchone()[0]
+    sign_in_count = c.execute("SELECT COUNT(*) FROM checkin_records WHERE user_id=?", (uid,)).fetchone()[0]
     conn.close()
 
     return JSONResponse({
@@ -949,14 +991,8 @@ def _admin_or_none(request: Request):
         return None, "未登录"
     if payload.get("role") != "admin":
         return None, "无权限"
-    conn = sqlite3.connect(DATABASE)
-    try:
-        admin = conn.execute(
-            "SELECT id, email, username, role FROM users WHERE email=?", (payload.get("email"),)
-        ).fetchone()
-    finally:
-        conn.close()
-    if not admin or admin[3] != "admin":
+    admin = _user_by_payload(payload)
+    if not admin or admin[6] != "admin":
         return None, "无权限"
     return admin, None
 
@@ -1057,6 +1093,133 @@ async def admin_logs(request: Request):
         }
         for r in rows
     ]}, status_code=200)
+
+# ============================================================
+# 管理员：邀请码（仅管理员，一次性）
+# ============================================================
+@app.get("/api/admin/invites")
+async def admin_list_invites(request: Request):
+    admin, err = _admin_or_none(request)
+    if err:
+        return JSONResponse({"error": err}, status_code=401 if err == "未登录" else 403)
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, code, created_by, created_at, expires_at, status, used_by, used_at "
+        "FROM invite_codes ORDER BY id DESC LIMIT 100"
+    ).fetchall()
+    conn.close()
+    return JSONResponse({"invites": [
+        {"id": r[0], "code": r[1], "created_by": r[2], "created_at": r[3], "expires_at": r[4],
+         "status": r[5], "used_by": r[6], "used_at": r[7]}
+        for r in rows
+    ]}, status_code=200)
+
+
+@app.post("/api/admin/invites")
+async def admin_create_invite(request: Request):
+    admin, err = _admin_or_none(request)
+    if err:
+        return JSONResponse({"error": err}, status_code=401 if err == "未登录" else 403)
+    data = await request.json()
+    chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+    code = "".join(random.choice(chars) for _ in range(8))
+    try:
+        days = int(data.get("expires_in_days", 7))
+    except (TypeError, ValueError):
+        days = 7
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=max(1, days))).strftime("%Y-%m-%d %H:%M:%S")
+    conn = sqlite3.connect(DATABASE)
+    conn.execute("INSERT INTO invite_codes (code, created_by, expires_at) VALUES (?, ?, ?)",
+                 (code, admin[2] or admin[1], expires_at))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"message": "邀请码已生成", "code": code, "expires_at": expires_at}, status_code=201)
+
+
+# ============================================================
+# 邀请注册（无邮箱用户以用户名记录，email 允许为空）
+# ============================================================
+@app.post("/api/register/invite")
+async def register_invite(request: Request):
+    data = await request.json()
+    is_human, msg = await verify_turnstile(data.get("cf_token"), "register")
+    if not is_human:
+        return JSONResponse({"error": msg}, status_code=403)
+    invite = (data.get("invite") or "").strip()
+    username = (data.get("username") or "").strip()
+    password = data.get("password")
+    email = (data.get("email") or "").strip()
+    if not invite or not username or not password:
+        return JSONResponse({"error": "请填写邀请码、用户名和密码"}, status_code=400)
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    inv = c.execute("SELECT id, status, expires_at FROM invite_codes WHERE code=?", (invite,)).fetchone()
+    if not inv:
+        conn.close()
+        return JSONResponse({"error": "邀请码不存在"}, status_code=400)
+    if inv[1] != "active":
+        conn.close()
+        return JSONResponse({"error": "邀请码已失效"}, status_code=400)
+    if inv[2] and datetime.strptime(inv[2], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp() < utc_timestamp():
+        conn.close()
+        return JSONResponse({"error": "邀请码已过期"}, status_code=400)
+    if c.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone():
+        conn.close()
+        return JSONResponse({"error": "该用户名已注册"}, status_code=400)
+    if email and c.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone():
+        conn.close()
+        return JSONResponse({"error": "该邮箱已被绑定"}, status_code=400)
+    hashed = hash_password(password)
+    c.execute("INSERT INTO users (email, username, password) VALUES (?, ?, ?)", (email or None, username, hashed))
+    new_id = c.lastrowid
+    c.execute("UPDATE invite_codes SET status='used', used_by=?, used_at=? WHERE id=?",
+              (new_id, utc_now(), inv[0]))
+    conn.commit()
+    conn.close()
+    token = create_token(email or "", username, "user")
+    return JSONResponse({"message": "注册成功", "token": token, "user": {
+        "email": email or None, "has_email": bool(email), "username": username,
+        "orange_balance": 0, "role": "user",
+    }}, status_code=201)
+
+
+# ============================================================
+# 绑定邮箱（无邮箱用户）
+# ============================================================
+@app.post("/api/user/bind-email")
+async def bind_email(request: Request):
+    payload = get_auth_user(request)
+    if not payload:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    user = _user_by_payload(payload)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    data = await request.json()
+    email = (data.get("email") or "").strip()
+    code = data.get("code")
+    if not email or not code:
+        return JSONResponse({"error": "邮箱和验证码不能为空"}, status_code=400)
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    if c.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone():
+        conn.close()
+        return JSONResponse({"error": "该邮箱已被其他账号绑定"}, status_code=400)
+    code_row = c.execute(
+        "SELECT id, attempts FROM codes WHERE email=? AND code=? AND is_used=0 AND expires_at>?",
+        (email, code, utc_now()),
+    ).fetchone()
+    if not code_row:
+        c.execute("UPDATE codes SET attempts = attempts + 1 WHERE email=? AND code=? AND is_used=0", (email, code))
+        conn.commit()
+        conn.close()
+        return JSONResponse({"error": "验证码错误或已过期"}, status_code=400)
+    c.execute("DELETE FROM codes WHERE id=?", (code_row[0],))
+    c.execute("UPDATE users SET email=? WHERE id=?", (email, user[0]))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"message": "邮箱绑定成功", "email": email, "has_email": True}, status_code=200)
+
 
 @app.get("/api/health")
 async def health():

@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE,
   username TEXT NOT NULL,
   password TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -25,11 +25,22 @@ CREATE TABLE IF NOT EXISTS codes (
 
 CREATE TABLE IF NOT EXISTS checkin_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT NOT NULL,
+  user_id INTEGER NOT NULL,
   checkin_date TEXT NOT NULL,
   points INTEGER DEFAULT 5,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(email, checkin_date)
+  UNIQUE(user_id, checkin_date)
+);
+
+CREATE TABLE IF NOT EXISTS invite_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT UNIQUE NOT NULL,
+  created_by TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP,
+  used_by INTEGER,
+  used_at TIMESTAMP,
+  status TEXT DEFAULT 'active'
 );
 
 CREATE TABLE IF NOT EXISTS admin_audit_logs (
