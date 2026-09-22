@@ -72,6 +72,15 @@ const handleGlobalToast = (event) => {
 
 onMounted(() => {
   window.addEventListener('show-toast', handleGlobalToast)
+
+  // 通过邀请链接（/?invite=xxx）直接打开时，自动弹出注册弹窗
+  // （邀请码预填由 LoginModal 挂载时的 onMounted 读取 URL 完成）
+  if (!currentUser.info) {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('invite')) {
+      openModal(false)
+    }
+  }
 })
 
 onBeforeUnmount(() => {
