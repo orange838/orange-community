@@ -46,13 +46,10 @@
 
         <!-- ========== 注册模式 ========== -->
         <template v-else>
-          <div class="form-item">
-            <label>邀请码 <span v-if="formData.invite" style="color:#67c23a">（已自动填入）</span></label>
-            <input type="text" placeholder="管理员邀请码（选填）" v-model="formData.invite" />
-          </div>
-          <div class="form-item">
-            <label>邮箱 <span v-if="formData.invite" style="color:#909399">（邀请注册可不填）</span></label>
-            <input type="email" placeholder="请输入邮箱地址（可留空）" v-model="formData.email" />
+          <div v-if="formData.invite" class="invite-tip">已通过邀请链接注册，无需邮箱，填写用户名和密码即可。</div>
+          <div v-if="!formData.invite" class="form-item">
+            <label>邮箱</label>
+            <input type="email" placeholder="请输入邮箱地址" v-model="formData.email" />
           </div>
           <div class="form-item">
             <label>用户名</label>
@@ -462,6 +459,7 @@ const handleSubmit = async () => {
 .form-item label { display: block; margin-bottom: 8px; color: #606266; font-size: 14px; }
 .form-item input { width: 100%; padding: 10px; border: 1px solid #dcdfe6; border-radius: 4px; box-sizing: border-box; outline: none; }
 .form-item input:focus { border-color: #ff9900; }
+.invite-tip { margin-bottom: 20px; padding: 10px 12px; background: #f0f9eb; color: #67c23a; border-radius: 4px; font-size: 13px; }
 
 .login-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
 .login-tabs button { flex: 1; padding: 10px; border: 1px solid #dcdfe6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; transition: all 0.3s; }
