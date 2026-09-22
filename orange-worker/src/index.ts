@@ -987,6 +987,16 @@ export default {
       return cors(response, request);
     } catch (error) {
       console.error(error);
+      const msg = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      try {
+        const p = new URL(request.url).pathname;
+        await env.DB.prepare(
+          "INSERT INTO activity_logs (actor_email, actor_username, action, action_detail, method, path, status) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ).bind(null, null, "server_error", `500 ${msg}`, request.method, p, 500).run();
+      } catch (logErr) {
+        console.error("failed to record server_error log", logErr);
+      }
       return cors(json({ error: "服务器内部错误" }, 500), request);
     }
   }
