@@ -73,11 +73,14 @@ const getActivityName = (path: string) => ({
   "/api/profile": "查看个人信息",
   "/api/send-code": "发送验证码",
   "/api/register": "注册账号",
+  "/api/register/invite": "邀请注册",
+  "/api/user/bind-email": "绑定邮箱",
   "/api/login": "登录账号",
   "/api/checkin": "签到",
   "/api/admin/users": "查看用户管理",
   "/api/admin/users/update": "修改用户信息",
-  "/api/admin/logs": "查看操作日志"
+  "/api/admin/logs": "查看操作日志",
+  "/api/admin/invites": "管理邀请码"
 }[path] ?? "访问接口");
 
 const roleLabel = (role: string) => role === "admin" ? "管理员" : "普通用户";
@@ -193,7 +196,7 @@ function getAuth(request: Request, env: Env) {
 // ============================================================
 // GitHub OAuth：签名 state + 换取 token + 获取用户信息
 // ============================================================
-async function githubState(secret: string, payload: { mode: string; bindEmail?: string }) {
+async function githubState(secret: string, payload: { mode: string; bindEmail?: string; bindUserId?: number }) {
   const exp = Math.floor(Date.now() / 1000) + 600; // 10 分钟内有效
   const data = b64url(encode(JSON.stringify({ ...payload, exp })));
   const sig = b64url(await hmacSign(secret, data));
@@ -207,7 +210,7 @@ async function verifyGithubState(secret: string, state: string) {
     const expected = b64url(await hmacSign(secret, parts[0]));
     if (expected !== parts[1]) return null;
     const parsed = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[0]))) as {
-      mode: string; bindEmail?: string; exp: number;
+      mode: string; bindEmail?: string; bindUserId?: number; exp: number;
     };
     if (parsed.exp < Math.floor(Date.now() / 1000)) return null;
     return parsed;
@@ -351,6 +354,24 @@ async function getUserByIdentifier(db: D1Database, identifier: string) {
   ).bind(identifier, identifier).first<User>();
 }
 
+async function getUserById(db: D1Database, id: number) {
+  return db.prepare(
+    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, github_id, github_username, cpoauth_id, cpoauth_username FROM users WHERE id = ?"
+  ).bind(id).first<User>();
+}
+
+async function getUserByUsername(db: D1Database, username: string) {
+  return db.prepare(
+    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, github_id, github_username, cpoauth_id, cpoauth_username FROM users WHERE username = ?"
+  ).bind(username).first<User>();
+}
+
+// 邀请注册的无邮箱用户 token 里 email 为空，需按用户名识别
+async function getUserByAuth(db: D1Database, auth: { email: string; username: string }) {
+  if (auth.email) return getUserByEmail(db, auth.email);
+  return getUserByUsername(db, auth.username);
+}
+
 function isProtectedUser(user: { email: string; username: string }, env: Env) {
   return user.email === env.PROTECTED_ADMIN_EMAIL || user.username === env.PROTECTED_ADMIN_USERNAME;
 }
@@ -423,6 +444,12 @@ async function recordActivity(
     actionDetail = audit
       ? `修改用户 ${audit.target_username ?? targetId}：橙子数量 ${audit.old_balance} → ${audit.new_balance}，角色 ${roleLabel(audit.old_role)} → ${roleLabel(audit.new_role)}`
       : `提交用户修改：橙子数量 ${String(body.orange_balance ?? "未提供")}，角色 ${roleLabel(String(body.role ?? ""))}`;
+  } else if (url.pathname === "/api/register/invite") {
+    actionDetail = `邀请注册账号 ${String(body.username ?? "新用户")}`;
+  } else if (url.pathname === "/api/user/bind-email") {
+    actionDetail = response.status === 200 ? `绑定邮箱 ${String(body.email ?? "")}` : "尝试绑定邮箱";
+  } else if (url.pathname === "/api/admin/invites") {
+    actionDetail = request.method === "POST" ? "生成邀请码" : "查看邀请码列表";
   }
   await db.prepare(
     "INSERT INTO activity_logs " +
@@ -457,12 +484,13 @@ async function handle(request: Request, env: Env) {
   if (url.pathname === "/api/profile" && request.method === "GET") {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
-    const user = await getUserByEmail(env.DB, auth.email);
+    const user = await getUserByAuth(env.DB, auth);
     if (!user) return json({ error: "用户不存在" }, 404);
-    const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE email = ?")
-      .bind(user.email).first<{ count: number }>();
+    const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE user_id = ?")
+      .bind(user.id).first<{ count: number }>();
     return json({
-      email: user.email,
+      email: user.email ?? null,
+      has_email: !!user.email,
       username: user.username,
       orange_balance: user.orange_balance ?? 0,
       last_sign_in_date: user.last_sign_in_date,
@@ -481,10 +509,12 @@ async function handle(request: Request, env: Env) {
     }
     const mode = url.searchParams.get("mode") === "bind" ? "bind" : "login";
     if (mode === "bind") {
-      // 绑定必须已登录；绑定目标固定为当前登录邮箱，避免被注入到其他账号
+      // 绑定必须已登录；绑定目标固定为当前登录账号（邮箱或用户名），避免被注入到其他账号
       const auth = await getAuth(request, env);
       if (!auth) return json({ error: "未登录" }, 401);
-      const state = await githubState(env.SECRET_KEY, { mode, bindEmail: auth.email });
+      const bindUser = await getUserByAuth(env.DB, auth);
+      if (!bindUser) return json({ error: "未登录" }, 401);
+      const state = await githubState(env.SECRET_KEY, { mode, bindEmail: auth.email, bindUserId: bindUser.id });
       const authorizeUrl =
         `https://github.com/login/oauth/authorize` +
         `?client_id=${encodeURIComponent(env.GITHUB_CLIENT_ID)}` +
@@ -536,11 +566,11 @@ async function handle(request: Request, env: Env) {
         return await successRedirect(user, gh.login);
       }
       if (parsed.mode === "bind") {
-        // 未绑定但发起的是绑定 → 绑定到当前登录邮箱
-        const owner = await getUserByEmail(env.DB, parsed.bindEmail ?? "");
+        // 未绑定但发起的是绑定 → 绑定到当前登录账号
+        const owner = parsed.bindUserId ? await getUserById(env.DB, parsed.bindUserId) : null;
         if (!owner) return redirect("/oauth-callback?error=bind_email_not_found");
-        await env.DB.prepare("UPDATE users SET github_id = ?, github_username = ? WHERE email = ?")
-          .bind(gid, gh.login, owner.email).run();
+        await env.DB.prepare("UPDATE users SET github_id = ?, github_username = ? WHERE id = ?")
+          .bind(gid, gh.login, owner.id).run();
         return await successRedirect(owner, gh.login);
       }
       // 未绑定且是登录 → 引导先注册/绑定
@@ -554,8 +584,10 @@ async function handle(request: Request, env: Env) {
   if (url.pathname === "/api/auth/github/unbind" && request.method === "POST") {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
-    await env.DB.prepare("UPDATE users SET github_id = NULL, github_username = NULL WHERE email = ?")
-      .bind(auth.email).run();
+    const user = await getUserByAuth(env.DB, auth);
+    if (!user) return json({ error: "未登录" }, 401);
+    await env.DB.prepare("UPDATE users SET github_id = NULL, github_username = NULL WHERE id = ?")
+      .bind(user.id).run();
     return json({ message: "已解绑 GitHub" });
   }
 
@@ -574,7 +606,9 @@ async function handle(request: Request, env: Env) {
     if (mode === "bind") {
       const auth = await getAuth(request, env);
       if (!auth) return json({ error: "未登录" }, 401);
-      const state = await githubState(env.SECRET_KEY, { mode, bindEmail: auth.email });
+      const bindUser = await getUserByAuth(env.DB, auth);
+      if (!bindUser) return json({ error: "未登录" }, 401);
+      const state = await githubState(env.SECRET_KEY, { mode, bindEmail: auth.email, bindUserId: bindUser.id });
       return json({ authorize_url: buildAuthUrl(state) });
     }
     const state = await githubState(env.SECRET_KEY, { mode: "login", bindEmail: "" });
@@ -616,10 +650,10 @@ async function handle(request: Request, env: Env) {
         return await successRedirect(user, cpName);
       }
       if (parsed.mode === "bind") {
-        const owner = await getUserByEmail(env.DB, parsed.bindEmail ?? "");
+        const owner = parsed.bindUserId ? await getUserById(env.DB, parsed.bindUserId) : null;
         if (!owner) return redirect("/oauth-callback?error=bind_email_not_found");
-        await env.DB.prepare("UPDATE users SET cpoauth_id = ?, cpoauth_username = ? WHERE email = ?")
-          .bind(cid, cpName, owner.email).run();
+        await env.DB.prepare("UPDATE users SET cpoauth_id = ?, cpoauth_username = ? WHERE id = ?")
+          .bind(cid, cpName, owner.id).run();
         return await successRedirect(owner, cpName);
       }
       return redirect("/oauth-callback?error=unbound&src=cpoauth");
@@ -632,8 +666,10 @@ async function handle(request: Request, env: Env) {
   if (url.pathname === "/api/auth/cpoauth/unbind" && request.method === "POST") {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
-    await env.DB.prepare("UPDATE users SET cpoauth_id = NULL, cpoauth_username = NULL WHERE email = ?")
-      .bind(auth.email).run();
+    const user = await getUserByAuth(env.DB, auth);
+    if (!user) return json({ error: "未登录" }, 401);
+    await env.DB.prepare("UPDATE users SET cpoauth_id = NULL, cpoauth_username = NULL WHERE id = ?")
+      .bind(user.id).run();
     return json({ message: "已解绑 CP OAuth" });
   }
 
@@ -730,8 +766,8 @@ async function handle(request: Request, env: Env) {
       const validCode = await validateCode(env.DB, email, code);
       if (!validCode) return json({ error: "验证码错误或已过期" }, 400);
       await env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id).run();
-      const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE email = ?")
-        .bind(user.email).first<{ count: number }>();
+      const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE user_id = ?")
+        .bind(user.id).first<{ count: number }>();
       const token = await createToken(env.SECRET_KEY, user.email, user.username, user.role ?? "user");
       return json({ message: `欢迎回来，${user.username}！`, token, user: {
         email: user.email,
@@ -748,8 +784,8 @@ async function handle(request: Request, env: Env) {
     const user = await getUserByIdentifier(env.DB, account);
     if (!user) return json({ error: "用户不存在" }, 401);
     if (!await verifyPassword(user.password, password)) return json({ error: "密码错误" }, 401);
-    const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE email = ?")
-      .bind(user.email).first<{ count: number }>();
+    const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE user_id = ?")
+      .bind(user.id).first<{ count: number }>();
     const token = await createToken(env.SECRET_KEY, user.email, user.username, user.role ?? "user");
     return json({
       message: `欢迎回来，${user.username}！`,
@@ -768,7 +804,7 @@ async function handle(request: Request, env: Env) {
   if (url.pathname === "/api/checkin" && request.method === "POST") {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "请先登录后再签到" }, 401);
-    const user = await getUserByEmail(env.DB, auth.email);
+    const user = await getUserByAuth(env.DB, auth);
     if (!user) return json({ error: "用户不存在" }, 404);
     const date = todayCN();
     if (user.last_sign_in_date === date) {
@@ -776,11 +812,11 @@ async function handle(request: Request, env: Env) {
     }
     const balance = Number(user.orange_balance ?? 0) + 5;
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO checkin_records (email, checkin_date, points) VALUES (?, ?, 5)").bind(user.email, date),
-      env.DB.prepare("UPDATE users SET orange_balance = ?, last_sign_in_date = ? WHERE email = ?").bind(balance, date, user.email)
+      env.DB.prepare("INSERT INTO checkin_records (user_id, checkin_date, points) VALUES (?, ?, 5)").bind(user.id, date),
+      env.DB.prepare("UPDATE users SET orange_balance = ?, last_sign_in_date = ? WHERE id = ?").bind(balance, date, user.id)
     ]);
-    const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE email = ?")
-      .bind(user.email).first<{ count: number }>();
+    const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE user_id = ?")
+      .bind(user.id).first<{ count: number }>();
     return json({ message: "签到成功", points: 5, orange_balance: balance, last_sign_in_date: date, sign_in_count: Number(count?.count ?? 0), has_checked_in_today: true });
   }
 
@@ -788,7 +824,7 @@ async function handle(request: Request, env: Env) {
   if (url.pathname === "/api/admin/users" && request.method === "GET") {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
-    const admin = await getUserByEmail(env.DB, auth.email);
+    const admin = await getUserByAuth(env.DB, auth);
     if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
     const users = await env.DB.prepare("SELECT id, email, username, orange_balance, role FROM users ORDER BY id").all();
     return json({ users: users.results.map((u) => ({ ...u, is_protected: isProtectedUser({ email: String(u.email), username: String(u.username) }, env) })) });
@@ -798,7 +834,7 @@ async function handle(request: Request, env: Env) {
   if (url.pathname === "/api/admin/users/update" && request.method === "POST") {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
-    const admin = await getUserByEmail(env.DB, auth.email);
+    const admin = await getUserByAuth(env.DB, auth);
     if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
 
     const target = await env.DB.prepare("SELECT id, email, username, orange_balance, role FROM users WHERE id = ?")
@@ -837,13 +873,104 @@ async function handle(request: Request, env: Env) {
   if (url.pathname === "/api/admin/logs" && request.method === "GET") {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
-    const admin = await getUserByEmail(env.DB, auth.email);
+    const admin = await getUserByAuth(env.DB, auth);
     if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
     const logs = await env.DB.prepare(
       "SELECT id, actor_email, actor_username, action, action_detail, method, path, status, created_at " +
       "FROM activity_logs ORDER BY id DESC LIMIT 100"
     ).all();
     return json({ logs: logs.results });
+  }
+
+  // -------- admin/invites（生成/查看邀请码，仅管理员）--------
+  if (url.pathname === "/api/admin/invites" && request.method === "GET") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const admin = await getUserByAuth(env.DB, auth);
+    if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
+    const rows = await env.DB.prepare(
+      "SELECT id, code, created_by, created_at, expires_at, status, used_by, used_at " +
+      "FROM invite_codes ORDER BY id DESC LIMIT 100"
+    ).all();
+    return json({ invites: rows.results });
+  }
+
+  if (url.pathname === "/api/admin/invites" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const admin = await getUserByAuth(env.DB, auth);
+    if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    let code = "";
+    for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    const days = Number(body.expires_in_days ?? 7);
+    const expiresAt = new Date(Date.now() + Math.max(1, days) * 24 * 3600_000).toISOString();
+    await env.DB.prepare(
+      "INSERT INTO invite_codes (code, created_by, expires_at) VALUES (?, ?, ?)"
+    ).bind(code, admin.username ?? admin.email, expiresAt).run();
+    return json({ message: "邀请码已生成", code, expires_at: expiresAt }, 201);
+  }
+
+  // -------- register/invite（邀请注册，无邮箱用户以用户名记录）--------
+  if (url.pathname === "/api/register/invite" && request.method === "POST") {
+    if (!await verifyTurnstile(body.cf_token as string | undefined, "register", request, env, env.DB)) {
+      return json({ error: "人机验证失败，请重试" }, 403);
+    }
+    const invite = String(body.invite ?? "");
+    const username = String(body.username ?? "");
+    const password = String(body.password ?? "");
+    const email = String(body.email ?? "").trim();
+    if (!invite || !username || !password) return json({ error: "请填写邀请码、用户名和密码" }, 400);
+    const inv = await env.DB.prepare(
+      "SELECT id, status, expires_at FROM invite_codes WHERE code = ? LIMIT 1"
+    ).bind(invite).first<{ id: number; status: string; expires_at: string | null }>();
+    if (!inv) return json({ error: "邀请码不存在" }, 400);
+    if (inv.status !== "active") return json({ error: "邀请码已失效" }, 400);
+    if (inv.expires_at && new Date(inv.expires_at).getTime() < Date.now()) {
+      return json({ error: "邀请码已过期" }, 400);
+    }
+    if (await env.DB.prepare("SELECT id FROM users WHERE username = ?").bind(username).first()) {
+      return json({ error: "该用户名已注册" }, 400);
+    }
+    if (email && await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first()) {
+      return json({ error: "该邮箱已被绑定" }, 400);
+    }
+    await env.DB.prepare(
+      "INSERT INTO users (email, username, password) VALUES (?, ?, ?)"
+    ).bind(email || null, username, await hashPassword(password)).run();
+    const newUser = await getUserByUsername(env.DB, username);
+    if (!newUser) return json({ error: "注册失败，请重试" }, 500);
+    await env.DB.prepare(
+      "UPDATE invite_codes SET status = 'used', used_by = ?, used_at = ? WHERE id = ?"
+    ).bind(newUser.id, new Date().toISOString(), inv.id).run();
+    const token = await createToken(env.SECRET_KEY, newUser.email ?? "", username, "user");
+    return json({ message: "注册成功", token, user: {
+      email: newUser.email ?? null,
+      has_email: !!newUser.email,
+      username,
+      orange_balance: 0,
+      role: "user"
+    } }, 201);
+  }
+
+  // -------- user/bind-email（无邮箱用户绑定邮箱）--------
+  if (url.pathname === "/api/user/bind-email" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const user = await getUserByAuth(env.DB, auth);
+    if (!user) return json({ error: "未登录" }, 401);
+    const email = String(body.email ?? "").trim();
+    const code = String(body.code ?? "");
+    if (!email || !code) return json({ error: "邮箱和验证码不能为空" }, 400);
+    const taken = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
+    if (taken) return json({ error: "该邮箱已被其他账号绑定" }, 400);
+    const validCode = await validateCode(env.DB, email, code);
+    if (!validCode) return json({ error: "验证码错误或已过期" }, 400);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id),
+      env.DB.prepare("UPDATE users SET email = ? WHERE id = ?").bind(email, user.id)
+    ]);
+    return json({ message: "邮箱绑定成功", email, has_email: true });
   }
 
   return json({ error: "未找到接口" }, 404);

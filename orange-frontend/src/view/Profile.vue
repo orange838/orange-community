@@ -19,6 +19,16 @@
           <button v-if="!currentUser.info.cpoauth_username" class="bind-btn" @click="bindCpoauth">绑定 CP OAuth</button>
           <button v-else class="unbind-btn" @click="unbindCpoauth">解绑</button>
         </div>
+        <div class="github-bind">
+          <span>邮箱：{{ currentUser.info.email || '未绑定' }}</span>
+          <button v-if="!currentUser.info.email" class="bind-btn" @click="showEmailBind = !showEmailBind">绑定邮箱</button>
+        </div>
+        <div v-if="showEmailBind && !currentUser.info.email" class="email-bind-form">
+          <input v-model="emailInput" placeholder="输入要绑定的邮箱" />
+          <button class="bind-btn" :disabled="sendingCode" @click="sendEmailCode">{{ sendingCode ? '发送中…' : '发送验证码' }}</button>
+          <input v-model="codeInput" placeholder="邮箱验证码" />
+          <button class="bind-btn" :disabled="binding" @click="confirmBindEmail">{{ binding ? '绑定中…' : '确认绑定' }}</button>
+        </div>
       </template>
       <template v-else>
         <p>当前状态：<span style="color: #909399;">未登录</span></p>
@@ -35,7 +45,7 @@ import { onMounted, watch } from 'vue'
 import { currentUser } from '../store'
 
 const loadProfile = async () => {
-  if (!currentUser.info?.email) return
+  if (!currentUser.info?.username) return
 
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile`, {
@@ -130,6 +140,65 @@ const unbindCpoauth = async () => {
   }
 }
 
+import { ref } from 'vue'
+const showEmailBind = ref(false)
+const emailInput = ref('')
+const codeInput = ref('')
+const sendingCode = ref(false)
+const binding = ref(false)
+
+// 发送邮箱验证码（发送到目标邮箱，供无邮箱用户绑定用）
+const sendEmailCode = async () => {
+  const email = emailInput.value.trim()
+  if (!email) { showToast('请先输入邮箱', 'error'); return }
+  sendingCode.value = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/send-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, type: 'login' })
+    })
+    const result = await res.json()
+    if (res.ok) {
+      showToast(result.message || '验证码已发送', 'success')
+    } else {
+      showToast(result.error || '发送失败', 'error')
+    }
+  } catch {
+    showToast('网络异常，请稍后再试', 'error')
+  } finally {
+    sendingCode.value = false
+  }
+}
+
+// 确认绑定邮箱（调用 /api/user/bind-email）
+const confirmBindEmail = async () => {
+  const email = emailInput.value.trim()
+  const code = codeInput.value.trim()
+  if (!email || !code) { showToast('请填写邮箱和验证码', 'error'); return }
+  binding.value = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/bind-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser.token}` },
+      body: JSON.stringify({ email, code })
+    })
+    const result = await res.json()
+    if (res.ok) {
+      currentUser.setInfo({ ...currentUser.info, email, has_email: true })
+      showEmailBind.value = false
+      showToast(result.message || '邮箱绑定成功', 'success')
+      loadProfile()
+    } else {
+      showToast(result.error || '绑定失败', 'error')
+    }
+  } catch {
+    showToast('网络异常，请稍后再试', 'error')
+  } finally {
+    binding.value = false
+  }
+}
+
 watch(() => currentUser.info?.email, () => {
   loadProfile()
 })
@@ -147,6 +216,8 @@ watch(() => currentUser.info?.email, () => {
 }
 
 .github-bind { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.email-bind-form { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.email-bind-form input { padding: 6px 10px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 13px; min-width: 160px; }
 .bind-btn { padding: 6px 16px; background-color: #24292e; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .bind-btn:hover { background-color: #000; }
 .unbind-btn { padding: 6px 16px; background-color: #fff; color: #f56c6c; border: 1px solid #f56c6c; border-radius: 4px; cursor: pointer; font-size: 13px; }

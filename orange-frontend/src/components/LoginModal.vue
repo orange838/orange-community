@@ -47,8 +47,12 @@
         <!-- ========== 注册模式 ========== -->
         <template v-else>
           <div class="form-item">
-            <label>邮箱</label>
-            <input type="email" placeholder="请输入邮箱地址" v-model="formData.email" />
+            <label>邀请码 <span v-if="formData.invite" style="color:#67c23a">（已自动填入）</span></label>
+            <input type="text" placeholder="管理员邀请码（选填）" v-model="formData.invite" />
+          </div>
+          <div class="form-item">
+            <label>邮箱 <span v-if="formData.invite" style="color:#909399">（邀请注册可不填）</span></label>
+            <input type="email" placeholder="请输入邮箱地址（可留空）" v-model="formData.email" />
           </div>
           <div class="form-item">
             <label>用户名</label>
@@ -62,7 +66,7 @@
             <label>确认密码</label>
             <input type="password" placeholder="请再次输入密码" v-model="formData.confirmPassword" />
           </div>
-          <div class="form-item code-item">
+          <div class="form-item code-item" v-if="!formData.invite">
             <label>邮箱验证码</label>
             <div class="code-input-wrapper">
               <input type="text" placeholder="请输入验证码" v-model="formData.code" />
@@ -122,8 +126,19 @@ const formData = reactive({
   username: '',   // 用于：注册
   password: '',   // 用于：登录/注册
   confirmPassword: '', // 用于：注册确认
-  code: ''        // 用于：验证码
+  code: '',       // 用于：验证码
+  invite: ''      // 用于：邀请注册（可选）
 })
+
+// 从 URL 读取邀请码（通过邀请链接打开时自动预填）
+const getInviteFromUrl = () => {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('invite') || ''
+  } catch {
+    return ''
+  }
+}
 
 const countdown = ref(0)
 const loading = ref(false)
@@ -158,7 +173,7 @@ const showToast = (msg, type = 'success') => {
 
 const switchMode = (toLogin) => {
   // 切换时清空表单，防止数据残留
-  Object.assign(formData, { email: '', account: '', username: '', password: '', confirmPassword: '', code: '' })
+  Object.assign(formData, { email: '', account: '', username: '', password: '', confirmPassword: '', code: '', invite: getInviteFromUrl() })
   currentTurnstileToken.value = ''
   turnstileError.value = ''
   loginMethod.value = 'password' 
@@ -280,7 +295,15 @@ const renderTurnstile = () => {
 }
 
 watch(() => props.isLogin, () => setTimeout(() => renderTurnstile(), 50))
-onMounted(() => renderTurnstile())
+onMounted(() => {
+  renderTurnstile()
+  const invite = getInviteFromUrl()
+  if (invite) {
+    formData.invite = invite
+    // 通过邀请链接打开：引导到注册模式
+    if (props.isLogin) emit('update:isLogin', false)
+  }
+})
 onBeforeUnmount(clearTurnstileWidget)
 
 // 【修复重点】发送验证码逻辑
@@ -327,14 +350,22 @@ const sendCode = async () => {
 // 【修复重点】提交表单逻辑
 const handleSubmit = async () => {
   // 1. 注册时的校验
+  const hasInvite = Boolean(formData.invite.trim())
   if (!props.isLogin) {
     if (formData.password !== formData.confirmPassword) {
       showToast('两次输入的密码不一致！', 'error')
       return
     }
-    if (!formData.username || !formData.password || !formData.email || !formData.code) {
-      showToast('请完整填写注册信息！', 'error')
-      return
+    if (hasInvite) {
+      if (!formData.username || !formData.password) {
+        showToast('请填写用户名和密码！', 'error')
+        return
+      }
+    } else {
+      if (!formData.username || !formData.password || !formData.email || !formData.code) {
+        showToast('请完整填写注册信息！', 'error')
+        return
+      }
     }
   }
 
@@ -365,7 +396,9 @@ const handleSubmit = async () => {
   try {
     const url = props.isLogin 
       ? `${import.meta.env.VITE_API_URL}/api/login` 
-      : `${import.meta.env.VITE_API_URL}/api/register`
+      : hasInvite
+        ? `${import.meta.env.VITE_API_URL}/api/register/invite`
+        : `${import.meta.env.VITE_API_URL}/api/register`
 
     const body = { cf_token: currentTurnstileToken.value }
 
@@ -380,10 +413,11 @@ const handleSubmit = async () => {
             body.code = formData.code
         }
     } else {
-        // 注册模式
-        body.email = formData.email
+        // 注册模式（支持邀请码；有邀请码时邮箱选填）
+        body.invite = formData.invite
         body.username = formData.username
         body.password = formData.password
+        body.email = formData.email
         body.code = formData.code
     }
 

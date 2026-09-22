@@ -25,6 +25,16 @@
       >
         操作日志
       </button>
+      <button
+        class="admin-tab"
+        :class="{ active: activeTab === 'invites' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'invites'"
+        @click="activeTab = 'invites'"
+      >
+        邀请码
+      </button>
     </div>
 
     <div v-if="activeTab === 'users'" class="admin-card">
@@ -47,7 +57,7 @@
           <tbody>
             <tr v-for="user in users" :key="user.id">
               <td>{{ user.username }}</td>
-              <td>{{ user.email }}</td>
+              <td>{{ user.email || '未绑定' }}</td>
               <td>
                 <input
                   v-model.number="user.orange_balance"
@@ -100,6 +110,50 @@
         </table>
       </div>
     </div>
+
+    <div v-if="activeTab === 'invites'" class="admin-card">
+      <p class="admin-label">邀请码管理</p>
+
+      <div class="invite-create">
+        <span>有效期</span>
+        <input v-model.number="inviteDays" type="number" min="1" max="365" class="balance-input" />
+        <span>天</span>
+        <button class="save-btn" :disabled="generating" @click="createInvite">{{ generating ? '生成中…' : '生成邀请码' }}</button>
+        <p class="invite-hint">邀请码一次性使用，无邮箱用户可凭邀请码注册（以用户名记录，之后可绑定邮箱）。</p>
+      </div>
+
+      <div v-if="invitesLoading" class="status-box">正在加载邀请码...</div>
+      <div v-else-if="invites.length === 0" class="status-box empty">暂无邀请码，点击上方按钮生成。</div>
+      <div v-else class="table-wrap">
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th>邀请码</th>
+              <th>创建人</th>
+              <th>创建时间</th>
+              <th>过期时间</th>
+              <th>状态</th>
+              <th>注册链接</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="inv in invites" :key="inv.id">
+              <td><code class="invite-code">{{ inv.code }}</code></td>
+              <td>{{ inv.created_by || '-' }}</td>
+              <td>{{ formatLogTime(inv.created_at) }}</td>
+              <td>{{ inv.expires_at ? formatLogTime(inv.expires_at) : '-' }}</td>
+              <td>
+                <span :class="['inv-status', inv.status]">{{ inv.status === 'active' ? '可用' : '已使用' }}</span>
+              </td>
+              <td>
+                <button v-if="inv.status === 'active'" class="save-btn" @click="copyInvite(inv.code)">复制链接</button>
+                <span v-else class="used-by">{{ inv.used_by || '-' }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -112,6 +166,12 @@ const loading = ref(true)
 const logs = ref([])
 const logsLoading = ref(true)
 const activeTab = ref('users')
+
+// 邀请码状态
+const invites = ref([])
+const invitesLoading = ref(true)
+const inviteDays = ref(7)
+const generating = ref(false)
 
 const isProtectedUser = (user) => Boolean(user?.is_protected)
 
@@ -135,6 +195,57 @@ const formatLogTime = (value) => {
     second: '2-digit',
     hour12: false
   }).format(date).replace(/\//g, '-')
+}
+
+const loadInvites = async () => {
+  if (!currentUser.info?.email) return
+
+  invitesLoading.value = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/invites`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+    const result = await res.json()
+    if (!res.ok) throw new Error(result.error || '加载失败')
+    invites.value = result.invites || []
+  } catch (error) {
+    showToast(error.message || '加载邀请码失败', 'error')
+  } finally {
+    invitesLoading.value = false
+  }
+}
+
+const createInvite = async () => {
+  if (!currentUser.info?.email) {
+    showToast('未登录，无法生成邀请码', 'error')
+    return
+  }
+  generating.value = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/invites`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser.token}` },
+      body: JSON.stringify({ expires_in_days: Number(inviteDays.value) || 7 })
+    })
+    const result = await res.json()
+    if (!res.ok) throw new Error(result.error || '生成失败')
+    showToast(`邀请码已生成：${result.code}`, 'success')
+    await loadInvites()
+  } catch (error) {
+    showToast(error.message || '生成失败', 'error')
+  } finally {
+    generating.value = false
+  }
+}
+
+const copyInvite = async (code) => {
+  const link = `${window.location.origin}/?invite=${code}`
+  try {
+    await navigator.clipboard.writeText(link)
+    showToast('注册链接已复制', 'success')
+  } catch {
+    showToast(`请手动复制：${link}`, 'error')
+  }
 }
 
 const loadLogs = async () => {
@@ -227,6 +338,7 @@ const saveUser = async (user) => {
 onMounted(() => {
   loadUsers()
   loadLogs()
+  loadInvites()
 })
 </script>
 
@@ -251,4 +363,13 @@ onMounted(() => {
 .role-select { width: 110px; }
 .save-btn { padding: 8px 16px; border: none; border-radius: 6px; background: #ff9900; color: #fff; cursor: pointer; }
 .save-btn:hover { background: #f28b00; }
+.save-btn:disabled { background: #ffc98a; cursor: not-allowed; }
+.invite-create { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.invite-create .balance-input { width: 80px; }
+.invite-hint { width: 100%; margin: 4px 0 0; color: #909399; font-size: 13px; }
+.invite-code { background: #fff7eb; padding: 3px 8px; border-radius: 4px; color: #8a5a00; font-weight: 700; letter-spacing: 1px; }
+.inv-status { padding: 2px 10px; border-radius: 4px; font-size: 12px; }
+.inv-status.active { background: #f0f9eb; color: #67c23a; }
+.inv-status.used { background: #f4f4f5; color: #909399; }
+.used-by { color: #909399; font-size: 13px; }
 </style>
