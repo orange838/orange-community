@@ -49,7 +49,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import LoginModal from './components/LoginModal.vue'
 import Toast from './components/Toast.vue' // 引入 Toast
 import { currentUser } from './store'
@@ -57,6 +57,55 @@ import { currentUser } from './store'
 const showLogin = ref(false)
 const isLoginMode = ref(true)
 const toastRef = ref(null) // 获取 Toast 组件实例
+
+// ---- 错题本 SSO 授权（errbook_sso=1&origin=xxx 打开本站）----
+const isSsoMode = ref(false)
+const ssoOrigin = ref('')
+const authAsked = ref(false)
+
+function detectSso() {
+  const p = new URLSearchParams(window.location.search)
+  if (p.get('errbook_sso') !== '1') return false
+  isSsoMode.value = true
+  ssoOrigin.value = p.get('origin') || 'https://aeb.cslblog.dpdns.org'
+  return true
+}
+
+function authorizeToErrbook() {
+  const token = currentUser.token
+  if (!token) return
+  const target = ssoOrigin.value
+  const win = window.opener || window.parent
+  if (win) {
+    win.postMessage({ type: 'errbook-sso', token }, target)
+  }
+  window.close()
+}
+
+async function askAuth() {
+  if (authAsked.value) return
+  authAsked.value = true
+  const info = currentUser.info
+  if (!info) return
+  const ok = await toastRef.value.showConfirm(`是否授权账号「${info.username}」登录 AI 错题本？`)
+  if (ok) authorizeToErrbook()
+  else window.close()
+}
+
+function handleSso() {
+  if (!detectSso()) return
+  if (!currentUser.info) {
+    // 未登录：打开登录弹窗，登录成功后由 watch 触发授权
+    openModal(true)
+  } else {
+    askAuth()
+  }
+}
+
+// SSO 模式下，等待用户在弹窗内登录成功后自动询问授权
+watch(currentUser.info, (val) => {
+  if (isSsoMode.value && val && !authAsked.value) askAuth()
+})
 
 const openModal = (mode) => {
   isLoginMode.value = mode
@@ -72,6 +121,7 @@ const handleGlobalToast = (event) => {
 
 onMounted(() => {
   window.addEventListener('show-toast', handleGlobalToast)
+  handleSso()
 
   // 通过邀请链接（/?invite=xxx）直接打开时，自动弹出注册弹窗
   // （邀请码预填由 LoginModal 挂载时的 onMounted 读取 URL 完成）
