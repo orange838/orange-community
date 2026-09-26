@@ -82,6 +82,15 @@ function authorizeToErrbook() {
   window.close()
 }
 
+function cancelToErrbook() {
+  const target = ssoOrigin.value
+  const win = window.opener || window.parent
+  if (win) {
+    win.postMessage({ type: 'errbook-sso', cancelled: true }, target)
+  }
+  window.close()
+}
+
 async function askAuth() {
   if (authAsked.value) return
   authAsked.value = true
@@ -89,7 +98,7 @@ async function askAuth() {
   if (!info) return
   const ok = await toastRef.value.showConfirm(`是否授权账号「${info.username}」登录 AI 错题本？`)
   if (ok) authorizeToErrbook()
-  else window.close()
+  else cancelToErrbook()
 }
 
 function handleSso() {
