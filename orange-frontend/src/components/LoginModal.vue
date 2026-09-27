@@ -292,6 +292,11 @@ const renderTurnstile = () => {
 }
 
 watch(() => props.isLogin, () => setTimeout(() => renderTurnstile(), 50))
+// ESC 关闭（给弹窗多一条退路）
+const onKeydown = (e) => {
+  if (e.key === 'Escape') handleClose()
+}
+
 onMounted(() => {
   renderTurnstile()
   const invite = getInviteFromUrl()
@@ -300,8 +305,12 @@ onMounted(() => {
     // 通过邀请链接打开：引导到注册模式
     if (props.isLogin) emit('update:isLogin', false)
   }
+  window.addEventListener('keydown', onKeydown)
 })
-onBeforeUnmount(clearTurnstileWidget)
+onBeforeUnmount(() => {
+  clearTurnstileWidget()
+  window.removeEventListener('keydown', onKeydown)
+})
 
 // 【修复重点】发送验证码逻辑
 const sendCode = async () => {
@@ -452,8 +461,12 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
-.modal-content { background: #fff; width: 420px; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); position: relative; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;
+  /* 小屏/怪比例下留出边距，并允许遮罩层自身滚动 */
+  padding: 16px; box-sizing: border-box; overflow-y: auto; }
+.modal-content { background: #fff; width: 420px; max-width: 100%; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); position: relative; box-sizing: border-box;
+  /* 高度超限时内部滚动，保证右上角关闭按钮始终可见 */
+  max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .modal-title { text-align: center; color: #333; margin-bottom: 30px; font-size: 24px; }
 .form-item { margin-bottom: 20px; }
 .form-item label { display: block; margin-bottom: 8px; color: #606266; font-size: 14px; }
@@ -489,6 +502,13 @@ const handleSubmit = async () => {
 .modal-footer { text-align: center; margin-top: 20px; font-size: 14px; color: #909399; }
 .modal-footer a { color: #ff9900; text-decoration: none; cursor: pointer; }
 .modal-footer a:hover { text-decoration: underline; }
-.close-btn { position: absolute; top: 15px; right: 20px; font-size: 24px; color: #909399; cursor: pointer; }
+.close-btn { position: absolute; top: 15px; right: 20px; font-size: 24px; color: #909399; cursor: pointer; line-height: 1; }
 .close-btn:hover { color: #333; }
+
+/* 窄屏/矮屏适配：压缩内边距与标题，避免弹窗贴满整屏 */
+@media (max-width: 480px), (max-height: 620px) {
+  .modal-content { padding: 28px 20px; }
+  .modal-title { font-size: 20px; margin-bottom: 20px; }
+  .close-btn { top: 10px; right: 14px; }
+}
 </style>
