@@ -8,6 +8,7 @@
         <li><router-link to="/checkin" active-class="active">签到</router-link></li>
         <li><router-link to="/notice" active-class="active">公告</router-link></li>
         <li><router-link to="/profile" active-class="active">个人信息</router-link></li>
+        <li><a href="https://aeb.cslblog.dpdns.org" target="_blank" rel="noopener">AI错题本</a></li>
         <li v-if="currentUser.info?.role === 'admin'">
           <router-link to="/admin" active-class="active">后台</router-link>
         </li>
