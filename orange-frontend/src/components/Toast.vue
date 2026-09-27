@@ -93,9 +93,11 @@ defineExpose({
   background-color: rgba(0, 0, 0, 0.5);
   display: flex; justify-content: center; align-items: center;
   z-index: 10000; /* 比 Toast 高一层 */
+  padding: 16px; box-sizing: border-box; overflow-y: auto;
 }
 .confirm-box {
-  background: #fff; width: 320px; padding: 25px;
+  background: #fff; width: 320px; max-width: 100%; padding: 25px; box-sizing: border-box;
+  max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto;
   border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
   text-align: center;
 }
