@@ -1,7 +1,7 @@
 <template>
   <div class="modal-overlay" @click.self="handleClose">
     <div class="modal-content">
-      <h2 class="modal-title">{{ isLogin ? '欢迎回来' : '注册账号' }}</h2>
+      <h2 class="modal-title">{{ resetMode ? '重置密码' : (isLogin ? '欢迎回来' : '注册账号') }}</h2>
 
       <form class="login-form" @submit.prevent="handleSubmit">
         
@@ -23,6 +23,7 @@
               <label>密码</label>
               <input type="password" placeholder="请输入密码" v-model="formData.password" />
             </div>
+            <div class="forgot-link"><a href="javascript:void(0)" @click="goReset">忘记密码？</a></div>
           </div>
 
           <!-- 验证码登录表单 -->
@@ -74,21 +75,48 @@
           </div>
         </template>
 
+        <!-- ========== 重置密码模式 ========== -->
+        <template v-if="resetMode">
+          <p class="reset-tip">请输入注册邮箱，通过邮箱验证码重置密码。</p>
+          <div class="form-item">
+            <label>邮箱</label>
+            <input type="email" placeholder="请输入注册邮箱" v-model="formData.email" />
+          </div>
+          <div class="form-item code-item">
+            <label>邮箱验证码</label>
+            <div class="code-input-wrapper">
+              <input type="text" placeholder="请输入验证码" v-model="formData.code" />
+              <button type="button" class="code-btn" :disabled="countdown > 0 || loading" @click="sendCode">
+                {{ countdown > 0 ? `${countdown}秒后重试` : '获取验证码' }}
+              </button>
+            </div>
+          </div>
+          <div class="form-item">
+            <label>新密码</label>
+            <input type="password" placeholder="请输入新密码（至少 6 位）" v-model="formData.password" />
+          </div>
+          <div class="form-item">
+            <label>确认新密码</label>
+            <input type="password" placeholder="请再次输入新密码" v-model="formData.confirmPassword" />
+          </div>
+        </template>
+
         <!-- Turnstile 人机验证 -->
         <div class="form-item turnstile-item">
           <label>人机验证</label>
-          <div v-if="isLogin" ref="turnstileContainerLogin"></div>
+          <div v-if="resetMode" ref="turnstileContainerReset"></div>
+          <div v-else-if="isLogin" ref="turnstileContainerLogin"></div>
           <div v-else ref="turnstileContainerRegister"></div>
           <p class="turnstile-hint" v-if="turnstileError">{{ turnstileError }}</p>
         </div>
 
         <!-- 提交按钮 -->
         <button type="submit" class="submit-btn" :disabled="loading || !currentTurnstileToken">
-          {{ loading ? '处理中...' : (isLogin ? '登 录' : '注 册') }}
+          {{ loading ? '处理中...' : (resetMode ? '重置密码' : (isLogin ? '登 录' : '注 册')) }}
         </button>
       </form>
 
-      <div v-if="isLogin" class="github-login">
+      <div v-if="isLogin && !resetMode" class="github-login">
         <div class="divider"><span>或</span></div>
         <button type="button" class="github-btn" @click="githubLogin">
           <svg class="github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -100,7 +128,8 @@
       </div>
 
       <div class="modal-footer">
-        <span v-if="isLogin">还没有账号？<a href="javascript:void(0)" @click="switchMode(false)">立即注册</a></span>
+        <span v-if="resetMode">想起来了？<a href="javascript:void(0)" @click="backToLogin">返回登录</a></span>
+        <span v-else-if="isLogin">还没有账号？<a href="javascript:void(0)" @click="switchMode(false)">立即注册</a></span>
         <span v-else>已有账号？<a href="javascript:void(0)" @click="switchMode(true)">立即登录</a></span>
       </div>
       
@@ -153,6 +182,8 @@ let timer = null
 // --- Turnstile 相关状态 ---
 const turnstileContainerLogin = ref(null)
 const turnstileContainerRegister = ref(null)
+const turnstileContainerReset = ref(null)
+const resetMode = ref(false)   // 忘记密码模式
 const currentTurnstileToken = ref('')
 const turnstileError = ref('')
 let turnstileTimeout = null
@@ -174,9 +205,27 @@ const switchMode = (toLogin) => {
   currentTurnstileToken.value = ''
   turnstileError.value = ''
   loginMethod.value = 'password' 
+  resetMode.value = false
   if (turnstileTimeout) clearTimeout(turnstileTimeout)
   clearTurnstileWidget()
   emit('update:isLogin', toLogin)
+}
+
+const goReset = () => {
+  Object.assign(formData, { email: '', account: '', username: '', password: '', confirmPassword: '', code: '' })
+  currentTurnstileToken.value = ''
+  turnstileError.value = ''
+  resetMode.value = true
+  clearTurnstileWidget()
+}
+
+const backToLogin = () => {
+  resetMode.value = false
+  Object.assign(formData, { email: '', account: '', username: '', password: '', confirmPassword: '', code: '' })
+  currentTurnstileToken.value = ''
+  turnstileError.value = ''
+  clearTurnstileWidget()
+  emit('update:isLogin', true)
 }
 
 const handleClose = () => emit('close')
@@ -235,7 +284,9 @@ const showTurnstileError = (error, message) => {
 }
 
 const renderTurnstile = () => {
-  const container = props.isLogin ? turnstileContainerLogin.value : turnstileContainerRegister.value
+  const container = resetMode.value
+    ? turnstileContainerReset.value
+    : (props.isLogin ? turnstileContainerLogin.value : turnstileContainerRegister.value)
   if (!container) return
 
   clearTurnstileWidget()
@@ -261,7 +312,7 @@ const renderTurnstile = () => {
         try {
           turnstileWidgetId = window.turnstile.render(container, {
             sitekey: import.meta.env.VITE_CF_SITE_KEY,
-            action: props.isLogin ? 'login' : 'register',
+            action: resetMode.value ? 'reset' : (props.isLogin ? 'login' : 'register'),
             callback: (token) => {
               currentTurnstileToken.value = token
               turnstileError.value = ''
@@ -292,6 +343,7 @@ const renderTurnstile = () => {
 }
 
 watch(() => props.isLogin, () => setTimeout(() => renderTurnstile(), 50))
+watch(resetMode, () => setTimeout(() => renderTurnstile(), 50))
 // ESC 关闭（给弹窗多一条退路）
 const onKeydown = (e) => {
   if (e.key === 'Escape') handleClose()
@@ -331,7 +383,7 @@ const sendCode = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         email: targetEmail,
-        type: props.isLogin ? 'login' : 'register' 
+        type: resetMode.value ? 'reset' : (props.isLogin ? 'login' : 'register') 
       })
     })
     const result = await response.json()
@@ -355,6 +407,51 @@ const sendCode = async () => {
 
 // 【修复重点】提交表单逻辑
 const handleSubmit = async () => {
+  // 0. 重置密码模式
+  if (resetMode.value) {
+    if (!formData.email || !formData.code) {
+      showToast('请输入邮箱和验证码！', 'error')
+      return
+    }
+    if (!formData.password || formData.password !== formData.confirmPassword) {
+      showToast('两次输入的密码不一致！', 'error')
+      return
+    }
+    if (!currentTurnstileToken.value) {
+      showToast('请完成人机验证！', 'error')
+      return
+    }
+    loading.value = true
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cf_token: currentTurnstileToken.value,
+          email: formData.email,
+          code: formData.code,
+          new_password: formData.password
+        })
+      })
+      const result = await response.json()
+      if (response.ok) {
+        showToast(result.message || '密码已重置', 'success')
+        setTimeout(() => backToLogin(), 1200)
+      } else {
+        showToast(result.error || '重置失败', 'error')
+        if (window.turnstile && turnstileContainerReset.value) {
+          window.turnstile.reset(turnstileContainerReset.value)
+        }
+        currentTurnstileToken.value = ''
+      }
+    } catch (e) {
+      showToast('网络异常，请稍后再试', 'error')
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+
   // 1. 注册时的校验
   const hasInvite = Boolean(formData.invite.trim())
   if (!props.isLogin) {
@@ -447,7 +544,9 @@ const handleSubmit = async () => {
       showToast(result.error || '操作失败', 'error')
       // 失败重置 Turnstile
       if (window.turnstile) {
-        const container = props.isLogin ? turnstileContainerLogin.value : turnstileContainerRegister.value
+        const container = resetMode.value
+          ? turnstileContainerReset.value
+          : (props.isLogin ? turnstileContainerLogin.value : turnstileContainerRegister.value)
         if (container) window.turnstile.reset(container)
         currentTurnstileToken.value = ''
       }
@@ -473,6 +572,10 @@ const handleSubmit = async () => {
 .form-item input { width: 100%; padding: 10px; border: 1px solid #dcdfe6; border-radius: 4px; box-sizing: border-box; outline: none; }
 .form-item input:focus { border-color: #ff9900; }
 .invite-tip { margin-bottom: 20px; padding: 10px 12px; background: #f0f9eb; color: #67c23a; border-radius: 4px; font-size: 13px; }
+.reset-tip { margin-bottom: 20px; padding: 10px 12px; background: #fff7e6; color: #b26a00; border-radius: 4px; font-size: 13px; }
+.forgot-link { text-align: right; margin: -8px 0 16px; }
+.forgot-link a { color: #ff9900; text-decoration: none; font-size: 13px; cursor: pointer; }
+.forgot-link a:hover { text-decoration: underline; }
 
 .login-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
 .login-tabs button { flex: 1; padding: 10px; border: 1px solid #dcdfe6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; transition: all 0.3s; }
