@@ -427,6 +427,46 @@ async def activity_middleware(request: Request, call_next):
 # ============================================================
 # 发送验证码（带发送冷却 + 验证码尝试次数上限）
 # ============================================================
+# ============================================================
+# 重置密码（Turnstile -> 邮箱验证码 -> 更新密码）
+# ============================================================
+@app.post("/api/reset-password")
+async def reset_password(request: Request):
+    data = await request.json()
+    is_human, msg = await verify_turnstile(data.get("cf_token"), "reset")
+    if not is_human:
+        return JSONResponse({"error": msg}, status_code=403)
+
+    email = (data.get("email") or "").strip()
+    code = (data.get("code") or "").strip()
+    new_password = data.get("new_password") or ""
+    if not email or not code or not new_password:
+        return JSONResponse({"error": "参数不完整"}, status_code=400)
+    if len(new_password) < 6:
+        return JSONResponse({"error": "密码至少 6 位"}, status_code=400)
+
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    user = c.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+    if not user:
+        conn.close()
+        return JSONResponse({"error": "该邮箱尚未注册"}, status_code=404)
+
+    row = c.execute(
+        "SELECT id, attempts FROM codes WHERE email=? AND code=? AND is_used=0 AND expires_at>? "
+        "ORDER BY id DESC LIMIT 1",
+        (email, code, utc_now()),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return JSONResponse({"error": "验证码错误或已过期"}, status_code=400)
+
+    c.execute("UPDATE codes SET is_used=1 WHERE id=?", (row[0],))
+    c.execute("UPDATE users SET password=? WHERE id=?", (hash_password(new_password), user[0]))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"message": "密码已重置，请使用新密码登录"})
+
 @app.post("/api/send-code")
 async def send_code(request: Request):
     data = await request.json()
@@ -436,6 +476,14 @@ async def send_code(request: Request):
         return JSONResponse({"error": "没邮箱"}, status_code=400)
     if not RESEND_API_KEY:
         return JSONResponse({"error": "服务器配置错误：缺少 RESEND_API_KEY"}, status_code=500)
+
+    # 重置密码：邮箱必须已注册
+    if code_type == "reset":
+        _conn = sqlite3.connect(DATABASE)
+        _exists = _conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+        _conn.close()
+        if not _exists:
+            return JSONResponse({"error": "该邮箱尚未注册"}, status_code=404)
 
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
@@ -467,7 +515,11 @@ async def send_code(request: Request):
     conn.commit()
     conn.close()
 
-    subject = "Orange Community 登录验证码" if code_type == "login" else "Orange Community 注册验证码"
+    subject = (
+        "Orange Community 登录验证码" if code_type == "login"
+        else "Orange Community 重置密码验证码" if code_type == "reset"
+        else "Orange Community 注册验证码"
+    )
     text = f"您的验证码是：{code}，有效期 {CODE_TTL_MINUTES} 分钟。请勿将验证码透露给他人。"
 
     try:

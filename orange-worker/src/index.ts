@@ -37,7 +37,8 @@ const json = (body: unknown, status = 200) =>
 const allowedOrigins = new Set([
   "https://cslblog.dpdns.org",
   "https://www.cslblog.dpdns.org",
-  "https://orange-community.pages.dev"
+  "https://orange-community.pages.dev",
+  "https://aeb.cslblog.dpdns.org"
 ]);
 
 const allowedTurnstileHostnames = new Set([
@@ -75,6 +76,7 @@ const getActivityName = (path: string) => ({
   "/api/register": "注册账号",
   "/api/register/invite": "邀请注册",
   "/api/user/bind-email": "绑定邮箱",
+  "/api/reset-password": "重置密码",
   "/api/login": "登录账号",
   "/api/checkin": "签到",
   "/api/admin/users": "查看用户管理",
@@ -303,7 +305,7 @@ async function verifyPassword(stored: string, password: string) {
 // ============================================================
 async function verifyTurnstile(
   token: string | undefined,
-  expectedAction: "login" | "register",
+  expectedAction: "login" | "register" | "reset",
   request: Request,
   env: Env,
   db: D1Database
@@ -449,6 +451,8 @@ async function recordActivity(
     actionDetail = `邀请注册账号 ${String(body.username ?? "新用户")}`;
   } else if (url.pathname === "/api/user/bind-email") {
     actionDetail = response.status === 200 ? `绑定邮箱 ${String(body.email ?? "")}` : "尝试绑定邮箱";
+  } else if (url.pathname === "/api/reset-password") {
+    actionDetail = response.status === 200 ? "重置密码成功" : "尝试重置密码";
   } else if (url.pathname === "/api/admin/invites") {
     actionDetail = request.method === "POST" ? "生成邀请码" : "查看邀请码列表";
   }
@@ -674,12 +678,44 @@ async function handle(request: Request, env: Env) {
     return json({ message: "已解绑 CP OAuth" });
   }
 
+  // -------- reset-password（邮箱验证码重置密码）--------
+  if (url.pathname === "/api/reset-password" && request.method === "POST") {
+    if (!await verifyTurnstile(body.cf_token as string | undefined, "reset", request, env, env.DB)) {
+      return json({ error: "人机验证失败，请重试" }, 403);
+    }
+    const email = String(body.email ?? "").trim();
+    const code = String(body.code ?? "").trim();
+    const newPassword = String(body.new_password ?? "");
+    if (!email || !code || !newPassword) return json({ error: "参数不完整" }, 400);
+    if (newPassword.length < 6) return json({ error: "密码至少 6 位" }, 400);
+
+    const user = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email)
+      .first<{ id: number }>();
+    if (!user) return json({ error: "该邮箱尚未注册" }, 404);
+
+    const validCode = await validateCode(env.DB, email, code);
+    if (!validCode) return json({ error: "验证码错误或已过期" }, 400);
+
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id),
+      env.DB.prepare("UPDATE users SET password = ? WHERE id = ?")
+        .bind(await hashPassword(newPassword), user.id),
+    ]);
+    return json({ message: "密码已重置，请使用新密码登录" });
+  }
+
   // -------- send-code（带发送冷却）--------
   if (url.pathname === "/api/send-code" && request.method === "POST") {
     const email = String(body.email ?? "");
-    const type = body.type === "login" ? "登录" : "注册";
+    const typeKey = String(body.type ?? "login");
+    const type = typeKey === "login" ? "登录" : typeKey === "reset" ? "重置密码" : "注册";
     if (!email) return json({ error: "没邮箱" }, 400);
     if (!env.RESEND_API_KEY) return json({ error: "服务器配置错误：缺少 RESEND_API_KEY" }, 500);
+    // 重置密码：邮箱必须已注册
+    if (typeKey === "reset") {
+      const exists = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
+      if (!exists) return json({ error: "该邮箱尚未注册" }, 404);
+    }
 
     // 发送冷却：同一邮箱 60 秒内仅可发送一次
     const last = await env.DB.prepare(
