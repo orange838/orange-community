@@ -54,10 +54,12 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import LoginModal from './components/LoginModal.vue'
 import Toast from './components/Toast.vue' // 引入 Toast
 import { currentUser } from './store'
+import { useRouter } from 'vue-router'
 
 const showLogin = ref(false)
 const isLoginMode = ref(true)
 const toastRef = ref(null) // 获取 Toast 组件实例
+const router = useRouter()
 
 // ---- 错题本 SSO 授权（errbook_sso=1&origin=xxx 打开本站）----
 const isSsoMode = ref(false)
@@ -115,6 +117,18 @@ function handleSso() {
 // SSO 模式下，等待用户在弹窗内登录成功后自动询问授权
 watch(currentUser.info, (val) => {
   if (isSsoMode.value && val && !authAsked.value) askAuth()
+})
+
+// 未绑定邮箱的账号：每次登录成功后提醒一次（SSO 弹窗模式不打扰）
+let emailReminded = false
+watch(currentUser.info, async (val) => {
+  if (isSsoMode.value || emailReminded) return
+  if (!val || val.email) return
+  emailReminded = true
+  const go = await toastRef.value?.showConfirm(
+    '你的账号还没有绑定邮箱。绑定后可用于找回账号、接收登录验证码。要现在去绑定吗？'
+  )
+  if (go) router.push({ path: '/profile', query: { bind: '1' } })
 })
 
 const openModal = (mode) => {

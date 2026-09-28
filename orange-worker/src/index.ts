@@ -187,10 +187,10 @@ async function verifyToken(secret: string, token: string) {
   }
 }
 
-function getAuth(request: Request, env: Env) {
+async function getAuth(request: Request, env: Env) {
   const auth = request.headers.get("Authorization") ?? "";
   if (!auth.startsWith("Bearer ")) return null;
-  return verifyToken(env.SECRET_KEY, auth.slice(7).trim());
+  return await verifyToken(env.SECRET_KEY, auth.slice(7).trim());
 }
 
 // ============================================================
@@ -405,7 +405,8 @@ async function recordActivity(
     url.pathname === "/api/health"
   ) return;
 
-  const tokenPayload = getAuth(request, env) as { email: string } | null;
+  // 注意：getAuth 是异步的，漏 await 会让 actor 永远解析不出来（日志里全变成“未登录”）
+  const tokenPayload = await getAuth(request, env) as { email: string } | null;
   const actorIdentifier = String(
     tokenPayload?.email
     ?? body.email ?? body.admin_email ?? body.account ?? url.searchParams.get("email") ?? ""
@@ -904,7 +905,10 @@ async function handle(request: Request, env: Env) {
     let code = "";
     for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
     const days = Number(body.expires_in_days ?? 7);
-    const expiresAt = new Date(Date.now() + Math.max(1, days) * 24 * 3600_000).toISOString();
+    if (!Number.isInteger(days) || days <= 0) {
+      return json({ error: "有效期天数请填写大于 0 的整数" }, 400);
+    }
+    const expiresAt = new Date(Date.now() + days * 24 * 3600_000).toISOString();
     await env.DB.prepare(
       "INSERT INTO invite_codes (code, created_by, expires_at) VALUES (?, ?, ?)"
     ).bind(code, admin.username ?? admin.email, expiresAt).run();

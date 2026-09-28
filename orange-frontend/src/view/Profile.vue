@@ -42,7 +42,10 @@
 
 <script setup>
 import { onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { currentUser } from '../store'
+
+const route = useRoute()
 
 const loadProfile = async () => {
   if (!currentUser.info?.username) return
@@ -62,6 +65,8 @@ const loadProfile = async () => {
 
 onMounted(() => {
   loadProfile()
+  // 从“未绑定邮箱”提醒跳转过来时，自动展开绑定表单
+  if (route.query.bind === '1') showEmailBind.value = true
 })
 
 const showToast = (msg, type = 'success') => {

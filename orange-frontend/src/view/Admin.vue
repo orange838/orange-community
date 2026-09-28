@@ -220,12 +220,17 @@ const createInvite = async () => {
     showToast('未登录，无法生成邀请码', 'error')
     return
   }
+  const days = Number(inviteDays.value)
+  if (!Number.isInteger(days) || days <= 0) {
+    showToast('有效期天数请填写大于 0 的整数', 'error')
+    return
+  }
   generating.value = true
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/invites`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser.token}` },
-      body: JSON.stringify({ expires_in_days: Number(inviteDays.value) || 7 })
+      body: JSON.stringify({ expires_in_days: days })
     })
     const result = await res.json()
     if (!res.ok) throw new Error(result.error || '生成失败')
