@@ -926,10 +926,29 @@ async function handle(request: Request, env: Env) {
     const admin = await getUserByAuth(env.DB, auth);
     if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
     const rows = await env.DB.prepare(
-      "SELECT id, code, created_by, created_at, expires_at, status, used_by, used_at " +
-      "FROM invite_codes ORDER BY id DESC LIMIT 100"
+      "SELECT ic.id, ic.code, ic.created_by, ic.created_at, ic.expires_at, ic.status, " +
+      "ic.used_by, ic.used_at, u.username AS used_by_name " +
+      "FROM invite_codes ic LEFT JOIN users u ON u.id = ic.used_by " +
+      "ORDER BY ic.id DESC LIMIT 100"
     ).all();
-    return json({ invites: rows.results });
+    // 过期但 status 仍为 active 的历史数据，展示为「已过期」
+    const parseTs = (value: string | null) => {
+      if (!value) return NaN;
+      const s = String(value).trim();
+      if (!s) return NaN;
+      if (/Z$/i.test(s) || /[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s).getTime();
+      return new Date(s.replace(" ", "T") + "Z").getTime();
+    };
+    const nowTs = Date.now();
+    const invites = (rows.results as any[]).map((row) => {
+      let status = row.status;
+      if (status === "active") {
+        const ts = parseTs(row.expires_at);
+        if (Number.isFinite(ts) && ts < nowTs) status = "expired";
+      }
+      return { ...row, status };
+    });
+    return json({ invites });
   }
 
   if (url.pathname === "/api/admin/invites" && request.method === "POST") {

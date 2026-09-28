@@ -143,11 +143,11 @@
               <td>{{ formatLogTime(inv.created_at) }}</td>
               <td>{{ inv.expires_at ? formatLogTime(inv.expires_at) : '-' }}</td>
               <td>
-                <span :class="['inv-status', inv.status]">{{ inv.status === 'active' ? '可用' : '已使用' }}</span>
+                <span :class="['inv-status', inv.status]">{{ inv.status === 'active' ? '可用' : inv.status === 'expired' ? '已过期' : '已使用' }}</span>
               </td>
               <td>
                 <button v-if="inv.status === 'active'" class="save-btn" @click="copyInvite(inv.code)">复制链接</button>
-                <span v-else class="used-by">{{ inv.used_by || '-' }}</span>
+                <span v-else class="used-by">{{ inv.status === 'used' ? (inv.used_by_name || inv.used_by || '-') : '—' }}</span>
               </td>
             </tr>
           </tbody>
@@ -376,5 +376,6 @@ onMounted(() => {
 .inv-status { padding: 2px 10px; border-radius: 4px; font-size: 12px; }
 .inv-status.active { background: #f0f9eb; color: #67c23a; }
 .inv-status.used { background: #f4f4f5; color: #909399; }
+.inv-status.expired { background: #fef0f0; color: #f56c6c; }
 .used-by { color: #909399; font-size: 13px; }
 </style>
