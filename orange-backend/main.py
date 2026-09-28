@@ -1157,15 +1157,41 @@ async def admin_list_invites(request: Request):
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
     rows = c.execute(
-        "SELECT id, code, created_by, created_at, expires_at, status, used_by, used_at "
-        "FROM invite_codes ORDER BY id DESC LIMIT 100"
+        "SELECT ic.id, ic.code, ic.created_by, ic.created_at, ic.expires_at, ic.status, "
+        "ic.used_by, ic.used_at, u.username "
+        "FROM invite_codes ic LEFT JOIN users u ON u.id = ic.used_by "
+        "ORDER BY ic.id DESC LIMIT 100"
     ).fetchall()
     conn.close()
-    return JSONResponse({"invites": [
-        {"id": r[0], "code": r[1], "created_by": r[2], "created_at": r[3], "expires_at": r[4],
-         "status": r[5], "used_by": r[6], "used_at": r[7]}
-        for r in rows
-    ]}, status_code=200)
+
+    def _parse_ts(value):
+        if not value:
+            return None
+        s = str(value).strip()
+        try:
+            if s.endswith("Z") or s.endswith("+00:00"):
+                return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+            return datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+        except Exception:
+            try:
+                return datetime.fromisoformat(s).timestamp()
+            except Exception:
+                return None
+
+    now_ts = datetime.now(timezone.utc).timestamp()
+    invites = []
+    for r in rows:
+        status = r[5]
+        if status == "active":
+            ts = _parse_ts(r[4])
+            if ts is not None and ts < now_ts:
+                status = "expired"
+        invites.append({
+            "id": r[0], "code": r[1], "created_by": r[2], "created_at": r[3],
+            "expires_at": r[4], "status": status, "used_by": r[6], "used_at": r[7],
+            "used_by_name": r[8],
+        })
+    return JSONResponse({"invites": invites}, status_code=200)
 
 
 @app.post("/api/admin/invites")
