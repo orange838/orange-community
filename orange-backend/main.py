@@ -1127,8 +1127,10 @@ async def admin_create_invite(request: Request):
     try:
         days = int(data.get("expires_in_days", 7))
     except (TypeError, ValueError):
-        days = 7
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=max(1, days))).strftime("%Y-%m-%d %H:%M:%S")
+        return JSONResponse({"error": "有效期天数请填写大于 0 的整数"}, status_code=400)
+    if days <= 0:
+        return JSONResponse({"error": "有效期天数请填写大于 0 的整数"}, status_code=400)
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     conn = sqlite3.connect(DATABASE)
     conn.execute("INSERT INTO invite_codes (code, created_by, expires_at) VALUES (?, ?, ?)",
                  (code, admin[2] or admin[1], expires_at))
