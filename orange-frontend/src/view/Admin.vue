@@ -147,7 +147,7 @@
               </td>
               <td>
                 <button v-if="inv.status === 'active'" class="save-btn" @click="copyInvite(inv.code)">复制链接</button>
-                <span v-else class="used-by">{{ inv.status === 'used' ? (inv.used_by_name || inv.used_by || '-') : '—' }}</span>
+                <span v-else class="used-by">{{ inv.status === 'used' ? '用户名：' + (inv.used_by_name || inv.used_by || '-') : '—' }}</span>
               </td>
             </tr>
           </tbody>
