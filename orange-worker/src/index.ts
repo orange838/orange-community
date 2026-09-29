@@ -82,7 +82,9 @@ const getActivityName = (path: string) => ({
   "/api/admin/users": "查看用户管理",
   "/api/admin/users/update": "修改用户信息",
   "/api/admin/logs": "查看操作日志",
-  "/api/admin/invites": "管理邀请码"
+  "/api/admin/invites": "管理邀请码",
+  "/api/user/messages": "查看系统消息",
+  "/api/user/messages/read": "查看系统消息"
 }[path] ?? "访问接口");
 
 const roleLabel = (role: string) => role === "admin" ? "管理员" : "普通用户";
@@ -857,6 +859,30 @@ async function handle(request: Request, env: Env) {
     return json({ message: "签到成功", points: 5, orange_balance: balance, last_sign_in_date: date, sign_in_count: Number(count?.count ?? 0), has_checked_in_today: true });
   }
 
+  // -------- user/messages（Bearer token）：管理员改过资料后给本人看的提示 --------
+  if (url.pathname === "/api/user/messages" && request.method === "GET") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const me = await getUserByAuth(env.DB, auth);
+    if (!me) return json({ error: "未登录" }, 401);
+    const rows = await env.DB.prepare(
+      "SELECT id, content, created_at FROM user_messages " +
+      "WHERE user_id = ? AND is_read = 0 ORDER BY id LIMIT 10"
+    ).bind(me.id).all();
+    return json({ messages: rows.results });
+  }
+
+  if (url.pathname === "/api/user/messages/read" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const me = await getUserByAuth(env.DB, auth);
+    if (!me) return json({ error: "未登录" }, 401);
+    await env.DB.prepare(
+      "UPDATE user_messages SET is_read = 1 WHERE user_id = ? AND is_read = 0"
+    ).bind(me.id).run();
+    return json({ message: "已读" });
+  }
+
   // -------- admin/users（Bearer token + admin）--------
   if (url.pathname === "/api/admin/users" && request.method === "GET") {
     const auth = await getAuth(request, env);
@@ -903,6 +929,16 @@ async function handle(request: Request, env: Env) {
         role
       )
     ]);
+    // 给「被修改的用户本人」留一条消息，下次他登录时弹窗告知
+    const oldRoleLabel = (target.role ?? "user") === "admin" ? "管理员" : "普通用户";
+    const newRoleLabel = role === "admin" ? "管理员" : "普通用户";
+    await env.DB.prepare(
+      "INSERT INTO user_messages (user_id, content, is_read, created_at) VALUES (?, ?, 0, ?)"
+    ).bind(
+      target.id,
+      `管理员修改了你的账号信息\n橙子数量：${Number(target.orange_balance ?? 0)} → ${balance}\n角色：${oldRoleLabel} → ${newRoleLabel}`,
+      new Date().toISOString()
+    ).run();
     return json({ message: "更新成功", id: target.id, orange_balance: balance, role });
   }
 
@@ -1060,12 +1096,22 @@ function tokenActor(request: Request): string {
   }
 }
 
+// 查询串里的敏感参数不要进日志（例如 ?token=<JWT> 可被拿去冒充登录）
+function safeSearch(url: URL): string {
+  if (!url.search) return "";
+  const params = new URLSearchParams(url.search);
+  for (const key of ["token", "access_token", "cf_token", "code"]) {
+    if (params.has(key)) params.set(key, "***");
+  }
+  return `?${params.toString()}`;
+}
+
 function logRequestLine(request: Request, status: number, ms: number) {
   if (request.method === "OPTIONS") return; // CORS 预检不记录，避免噪音
   const url = new URL(request.url);
   const ua = (request.headers.get("User-Agent") || "-").slice(0, 60);
   const line =
-    `[请求] ${request.method} ${url.pathname}${url.search || ""} ${status} ${ms}ms` +
+    `[请求] ${request.method} ${url.pathname}${safeSearch(url)} ${status} ${ms}ms` +
     ` | ${tokenActor(request)} | ip=${maskIp(request.headers.get("CF-Connecting-IP"))} | ${ua}`;
   if (status >= 500) console.error(line);
   else if (status >= 400) console.warn(line);
