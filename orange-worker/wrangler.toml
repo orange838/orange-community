@@ -18,3 +18,14 @@ PROTECTED_ADMIN_USERNAME = "orange"
 
 # SECRET_KEY（JWT 签名密钥）为敏感值，请勿写入本文件。
 # 请用 `wrangler secret put SECRET_KEY` 单独配置；本地 .env 的 SECRET_KEY 建议保持一致。
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
