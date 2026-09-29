@@ -1114,7 +1114,7 @@ async def admin_update_user(request: Request):
         "(admin_email, admin_username, target_user_id, target_email, target_username, "
         "old_balance, new_balance, old_role, new_role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            admin[1], admin[2], target[0], target[1], target[2],
+            admin[1] or "", admin[2], target[0], target[1] or "", target[2],
             int(target[3] or 0), balance, target[4] or "user", normalized_role,
         ),
     )

@@ -892,10 +892,10 @@ async function handle(request: Request, env: Env) {
         "(admin_email, admin_username, target_user_id, target_email, target_username, " +
         "old_balance, new_balance, old_role, new_role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
-        admin.email,
+        admin.email ?? "",
         admin.username,
         target.id,
-        target.email,
+        target.email ?? "",
         target.username,
         Number(target.orange_balance ?? 0),
         balance,
