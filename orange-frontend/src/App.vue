@@ -131,6 +131,36 @@ watch(currentUser.info, async (val) => {
   if (go) router.push({ path: '/profile', query: { bind: '1' } })
 })
 
+// 管理员改过我的资料：下次登录弹窗告知（SSO 弹窗模式不打扰）
+let msgChecked = false
+watch(currentUser.info, async (val) => {
+  if (!val) {
+    msgChecked = false
+    return
+  }
+  if (isSsoMode.value || msgChecked || !currentUser.token) return
+  msgChecked = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/messages`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    const list = data.messages || []
+    if (!list.length) return
+    await toastRef.value?.showAlert(
+      list.map((m) => m.content).join('\n\n'),
+      '来自管理员的提醒'
+    )
+    await fetch(`${import.meta.env.VITE_API_URL}/api/user/messages/read`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+  } catch (e) {
+    // 拉取失败不影响正常使用
+  }
+})
+
 const openModal = (mode) => {
   isLoginMode.value = mode
   showLogin.value = true
@@ -143,8 +173,17 @@ const handleGlobalToast = (event) => {
   }
 }
 
+// 全局「仅提示」弹窗：只有一个确认按钮
+const handleGlobalAlert = (event) => {
+  const { msg, title = '提示' } = event.detail || {}
+  if (msg && toastRef.value?.showAlert) {
+    toastRef.value.showAlert(msg, title)
+  }
+}
+
 onMounted(() => {
   window.addEventListener('show-toast', handleGlobalToast)
+  window.addEventListener('show-alert', handleGlobalAlert)
   handleSso()
 
   // 通过邀请链接（/?invite=xxx）直接打开时，自动弹出注册弹窗
@@ -159,6 +198,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('show-toast', handleGlobalToast)
+  window.removeEventListener('show-alert', handleGlobalAlert)
 })
 
 // 【修改】退出登录逻辑 - 使用自定义弹窗
