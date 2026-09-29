@@ -12,13 +12,13 @@
 
     <!-- 确认弹窗 (新增功能) -->
     <transition name="modal-fade">
-      <div v-if="visible && (type === 'confirm' || type === 'alert')" class="confirm-overlay">
+      <div v-if="visible && type === 'confirm'" class="confirm-overlay">
         <div class="confirm-box">
-          <h3 class="confirm-title">{{ alertTitle }}</h3>
+          <h3 class="confirm-title">提示</h3>
           <p class="confirm-content">{{ message }}</p>
           <div class="confirm-actions">
-            <button v-if="type === 'confirm'" class="btn-cancel" @click="handleCancel">取消</button>
-            <button class="btn-confirm" @click="handleConfirm">确认</button>
+            <button class="btn-cancel" @click="handleCancel">取消</button>
+            <button class="btn-confirm" @click="handleConfirm">确定</button>
           </div>
         </div>
       </div>
@@ -31,8 +31,7 @@ import { ref, computed } from 'vue'
 
 const visible = ref(false)
 const message = ref('')
-const type = ref('message') // 'message' | 'confirm' | 'alert'
-const alertTitle = ref('提示')
+const type = ref('message') // 'message' 或 'confirm'
 const status = ref('success') // 'success' 或 'error'
 let resolvePromise = null // 用来存回调函数
 
@@ -62,17 +61,6 @@ const showConfirm = (msg) => {
   })
 }
 
-// 3. 仅提示：样式同确认弹窗，但只有一个「确认」按钮，且没有关闭/取消入口
-const showAlert = (msg, title = '提示') => {
-  message.value = msg
-  alertTitle.value = title
-  type.value = 'alert'
-  visible.value = true
-  return new Promise((resolve) => {
-    resolvePromise = resolve
-  })
-}
-
 // 点击确定
 const handleConfirm = () => {
   visible.value = false
@@ -88,8 +76,7 @@ const handleCancel = () => {
 // 暴露给外部使用
 defineExpose({
   showToast,
-  showConfirm,
-  showAlert
+  showConfirm
 })
 </script>
 
@@ -115,7 +102,7 @@ defineExpose({
   text-align: center;
 }
 .confirm-title { margin: 0 0 15px 0; font-size: 18px; color: #333; }
-.confirm-content { margin: 0 0 25px 0; font-size: 15px; color: #606266; line-height: 1.5; white-space: pre-line; }
+.confirm-content { margin: 0 0 25px 0; font-size: 15px; color: #606266; line-height: 1.5; }
 .confirm-actions { display: flex; justify-content: space-between; gap: 15px; }
 .confirm-actions button {
   flex: 1; padding: 10px 0; border-radius: 6px; border: none;

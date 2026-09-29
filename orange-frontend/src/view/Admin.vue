@@ -179,11 +179,6 @@ const showToast = (msg, type = 'success') => {
   window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
 }
 
-// 仅提示的弹窗（只有一个「确认」按钮）
-const showAlert = (msg, title = '提示') => {
-  window.dispatchEvent(new CustomEvent('show-alert', { detail: { msg, title } }))
-}
-
 const formatLogTime = (value) => {
   if (!value) return '未知时间'
   const raw = String(value)
@@ -338,12 +333,7 @@ const saveUser = async (user) => {
       throw new Error(result.error || '更新失败')
     }
 
-    showAlert(
-      `已保存用户「${user.username}」的修改\n` +
-      `橙子数量：${Number(user.orange_balance || 0)}\n` +
-      `角色：${user.role === 'admin' ? '管理员' : '普通用户'}`,
-      '修改已保存'
-    )
+    showToast(result.message || '更新成功', 'success')
     await loadLogs()
   } catch (error) {
     showToast(error.message || '更新失败', 'error')
