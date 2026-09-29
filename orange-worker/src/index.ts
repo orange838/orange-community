@@ -1035,17 +1035,59 @@ async function handle(request: Request, env: Env) {
   return json({ error: "未找到接口" }, 404);
 }
 
+// ---------------- 请求日志（Workers Logs） ----------------
+function maskIp(ip: string | null): string {
+  if (!ip) return "-";
+  if (ip.includes(":")) return ip.split(":").slice(0, 3).join(":") + "::*";
+  const parts = ip.split(".");
+  return parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.*` : ip;
+}
+
+// 仅用于日志展示：解出 token 里的用户名/邮箱，不做签名校验（鉴权仍由 getAuth 负责）
+function tokenActor(request: Request): string {
+  const auth = request.headers.get("Authorization") || "";
+  const token = auth.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return "匿名";
+  const seg = token.split(".")[1];
+  if (!seg) return "已登录";
+  try {
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    const who = payload.username || payload.email || "已登录";
+    return payload.email && payload.username ? `${who}(${payload.email})` : String(who);
+  } catch {
+    return "已登录";
+  }
+}
+
+function logRequestLine(request: Request, status: number, ms: number) {
+  if (request.method === "OPTIONS") return; // CORS 预检不记录，避免噪音
+  const url = new URL(request.url);
+  const ua = (request.headers.get("User-Agent") || "-").slice(0, 60);
+  const line =
+    `[请求] ${request.method} ${url.pathname}${url.search || ""} ${status} ${ms}ms` +
+    ` | ${tokenActor(request)} | ip=${maskIp(request.headers.get("CF-Connecting-IP"))} | ${ua}`;
+  if (status >= 500) console.error(line);
+  else if (status >= 400) console.warn(line);
+  else console.log(line);
+}
+
 export default {
   async fetch(request: Request, env: Env) {
+    const started = Date.now();
     try {
       const body = request.method === "POST"
         ? await request.clone().json<Record<string, unknown>>().catch(() => ({}))
         : {};
       const response = await handle(request, env);
       await recordActivity(env.DB, request, response, body, env);
+      logRequestLine(request, response.status, Date.now() - started);
       return cors(response, request);
     } catch (error) {
-      console.error(error);
+      console.error(
+        `[错误] ${request.method} ${new URL(request.url).pathname} 未捕获异常 ` +
+        `${Date.now() - started}ms | ${error instanceof Error ? error.stack : String(error)}`
+      );
       const msg = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
       try {
         const p = new URL(request.url).pathname;
