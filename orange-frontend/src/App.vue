@@ -143,8 +143,17 @@ const handleGlobalToast = (event) => {
   }
 }
 
+// 全局「仅提示」弹窗：只有一个确认按钮
+const handleGlobalAlert = (event) => {
+  const { msg, title = '提示' } = event.detail || {}
+  if (msg && toastRef.value?.showAlert) {
+    toastRef.value.showAlert(msg, title)
+  }
+}
+
 onMounted(() => {
   window.addEventListener('show-toast', handleGlobalToast)
+  window.addEventListener('show-alert', handleGlobalAlert)
   handleSso()
 
   // 通过邀请链接（/?invite=xxx）直接打开时，自动弹出注册弹窗
@@ -159,6 +168,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('show-toast', handleGlobalToast)
+  window.removeEventListener('show-alert', handleGlobalAlert)
 })
 
 // 【修改】退出登录逻辑 - 使用自定义弹窗
