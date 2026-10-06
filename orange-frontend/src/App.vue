@@ -35,6 +35,11 @@
       <main class="content-area">
         <router-view />
       </main>
+
+      <!-- 页脚：DigitalPlat FreeDomain 徽章 -->
+      <footer class="site-footer">
+        <a href="https://dashboard.digitalplat.org/signup?ref=AYxV65nOjF" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #d6dbe7;border-radius:12px;background:#ffffff;color:#0f172a;text-decoration:none;font:500 13px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 1px 2px rgba(15,23,42,0.06);"><span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;border-radius:9999px;background:#eff6ff;color:#1d4ed8;font:600 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:0.02em;text-transform:uppercase;">DigitalPlat</span><span style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:600;">This Website is Powered by DigitalPlat FreeDomain</span><span style="color:#475569;">Get a free domain from DigitalPlat.</span></span></a>
+      </footer>
     </div>
 
     <!-- 登录弹窗 -->
@@ -234,6 +239,7 @@ const handleLogout = async () => {
 .btn-logout { background-color: #f56c6c; color: #fff; }
 .btn-logout:hover { background-color: #e05c5c; }
 .content-area { flex: 1; padding: 30px; overflow-y: auto; }
+.site-footer { display: flex; justify-content: center; align-items: center; padding: 14px 20px 18px; background-color: #f5f7fa; }
 
 @media (max-width: 768px) {
   .app-container {

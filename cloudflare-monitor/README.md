@@ -27,3 +27,7 @@ This project is licensed under the **GNU General Public License v3.0**.
 - **Commercial Use:** If you wish to use this software for commercial purposes or closed-source modification, please contact the author for a commercial license.
 
 📧 **Contact:** 3659793158@qq.com
+
+---
+
+> Built by CSL with the assistance of AI（由 CSL 在 AI 辅助下构建）

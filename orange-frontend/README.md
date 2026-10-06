@@ -12,3 +12,7 @@ This directory contains the Vue frontend for Orange Community.
 
 - [`../orange-worker/`](../orange-worker/) - API and database integration
 - [`../cloudflare-monitor/`](../cloudflare-monitor/) - service monitoring dashboard
+
+---
+
+> Built by CSL with the assistance of AI（由 CSL 在 AI 辅助下构建）
