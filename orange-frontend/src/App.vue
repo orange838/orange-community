@@ -13,6 +13,12 @@
           <router-link to="/admin" active-class="active">后台</router-link>
         </li>
       </ul>
+
+      <!-- 侧边栏底部：运行时长 + 仓库链接 -->
+      <div class="sidebar-footer">
+        <div class="uptime">本站已运行 {{ secondsRunning }} 秒</div>
+        <a href="https://github.com/orange838/orange-community" target="_blank" rel="noopener">GitHub 仓库</a>
+      </div>
     </aside>
 
     <!-- 右侧主区域 -->
@@ -38,7 +44,7 @@
 
       <!-- 页脚：DigitalPlat FreeDomain 徽章 -->
       <footer class="site-footer">
-        <a href="https://dashboard.digitalplat.org/signup?ref=AYxV65nOjF" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #d6dbe7;border-radius:12px;background:#ffffff;color:#0f172a;text-decoration:none;font:500 13px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 1px 2px rgba(15,23,42,0.06);"><span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;border-radius:9999px;background:#eff6ff;color:#1d4ed8;font:600 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:0.02em;text-transform:uppercase;">DigitalPlat</span><span style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:600;">This Website is Powered by DigitalPlat FreeDomain</span><span style="color:#475569;">Get a free domain from DigitalPlat.</span></span></a>
+        <a href="https://dashboard.digitalplat.org/signup?ref=AYxV65nOjF" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #d6dbe7;border-radius:12px;background:#ffffff;color:#0f172a;text-decoration:none;font:500 13px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;box-shadow:0 1px 2px rgba(15,23,42,0.06);"><span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;border-radius:9999px;background:#eff6ff;color:#1d4ed8;font:600 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;letter-spacing:0.02em;text-transform:uppercase;">DigitalPlat</span><span style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:600;">本网站由 DigitalPlat FreeDomain 提供支持</span><span style="color:#475569;">来 DigitalPlat 免费领取域名</span></span></a>
       </footer>
     </div>
 
@@ -65,6 +71,15 @@ const showLogin = ref(false)
 const isLoginMode = ref(true)
 const toastRef = ref(null) // 获取 Toast 组件实例
 const router = useRouter()
+// 本站运行时长：从页面打开开始计时
+const secondsRunning = ref(0)
+let uptimeTimer = null
+onMounted(() => {
+  uptimeTimer = setInterval(() => { secondsRunning.value += 1 }, 1000)
+})
+onBeforeUnmount(() => {
+  if (uptimeTimer) clearInterval(uptimeTimer)
+})
 
 // ---- 错题本 SSO 授权（errbook_sso=1&origin=xxx 打开本站）----
 const isSsoMode = ref(false)
@@ -241,6 +256,10 @@ const handleLogout = async () => {
 .content-area { flex: 1; padding: 30px; overflow-y: auto; }
 .site-footer { display: flex; justify-content: center; align-items: center; padding: 14px 20px 18px; background-color: #f5f7fa; }
 
+.sidebar-footer { margin-top: auto; padding: 14px 25px 18px; border-top: 1px solid #f0f2f5; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.sidebar-footer .uptime { color: #909399; }
+.sidebar-footer a { color: #ff9900; text-decoration: none; }
+.sidebar-footer a:hover { text-decoration: underline; }
 @media (max-width: 768px) {
   .app-container {
     display: block;
