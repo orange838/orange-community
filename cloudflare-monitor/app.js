@@ -39,6 +39,11 @@ function labelMap(label) {
     'D1 Database': 'D1 数据库',
     'Git Head': 'Git 头提交',
     'Database name': '数据库名',
+    'Tables': '数据表数量',
+    'Users': '用户数',
+    'Check-ins': '签到记录数',
+    'Invite codes': '邀请码数量',
+    'Turnstile records': '人机验证记录数',
     'Database size': '数据库大小',
     'Read queries 24h': '24h 读查询',
     'Write queries 24h': '24h 写查询',
@@ -112,14 +117,23 @@ function renderList(target, items) {
   `).join('');
 }
 
+const LIVE_STATUS_URL = 'https://api.cslblog.dpdns.org/api/status';
+
+// 优先读 Worker 的实时接口，接口不可用时退回仓库里的静态数据文件
+async function fetchDashboardData() {
+  try {
+    const live = await fetch(LIVE_STATUS_URL, { cache: 'no-store' });
+    if (live.ok) return await live.json();
+  } catch (error) {
+    // 忽略，走本地兜底
+  }
+  const fallback = await fetch('./data/cf-status.json');
+  if (!fallback.ok) throw new Error('Fetch failed');
+  return await fallback.json();
+}
 async function loadDashboard() {
   try {
-    const response = await fetch('./data/cf-status.json');
-    if (!response.ok) {
-      throw new Error('Fetch failed');
-    }
-
-    const data = await response.json();
+    const data = await fetchDashboardData();
     renderSummary(data.summary);
     renderResourceTable(data.resources);
     renderList(domainList, data.domains);
