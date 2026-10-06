@@ -16,7 +16,7 @@
 
       <!-- 侧边栏底部：运行时长 + 仓库链接 -->
       <div class="sidebar-footer">
-        <div class="uptime">本站已运行 {{ secondsRunning }} 秒</div>
+        <div class="uptime">本站已运行 {{ uptimeText }}</div>
         <a href="https://github.com/orange838/orange-community" target="_blank" rel="noopener">GitHub 仓库</a>
       </div>
     </aside>
@@ -71,11 +71,21 @@ const showLogin = ref(false)
 const isLoginMode = ref(true)
 const toastRef = ref(null) // 获取 Toast 组件实例
 const router = useRouter()
-// 本站运行时长：从页面打开开始计时
-const secondsRunning = ref(0)
+// 开站时长：从站点上线那天开始算（要改开站日期就改下面这一行）
+const SITE_LAUNCH = new Date('2026-08-28T00:00:00+08:00')
+const uptimeText = ref('')
 let uptimeTimer = null
+function refreshUptime() {
+  const totalSeconds = Math.max(0, Math.floor((Date.now() - SITE_LAUNCH.getTime()) / 1000))
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  uptimeText.value = `${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`
+}
 onMounted(() => {
-  uptimeTimer = setInterval(() => { secondsRunning.value += 1 }, 1000)
+  refreshUptime()
+  uptimeTimer = setInterval(refreshUptime, 1000)
 })
 onBeforeUnmount(() => {
   if (uptimeTimer) clearInterval(uptimeTimer)

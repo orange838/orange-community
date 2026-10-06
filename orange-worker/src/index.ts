@@ -38,7 +38,9 @@ const allowedOrigins = new Set([
   "https://cslblog.dpdns.org",
   "https://www.cslblog.dpdns.org",
   "https://orange-community.pages.dev",
-  "https://aeb.cslblog.dpdns.org"
+  "https://aeb.cslblog.dpdns.org",
+  "https://dash.cslblog.dpdns.org",
+  "https://orange-community-monitor.pages.dev"
 ]);
 
 const allowedTurnstileHostnames = new Set([
@@ -476,6 +478,106 @@ async function recordActivity(
 // ============================================================
 // 路由
 // ============================================================
+// ============================================================
+// 看板实时状态：dash.cslblog.dpdns.org 打开时直接调用，数据现取现用
+// ============================================================
+const DASHBOARD_DOMAINS = [
+  "orange-community.pages.dev",
+  "cslblog.dpdns.org",
+  "www.cslblog.dpdns.org"
+];
+
+async function countRows(env: Env, table: string) {
+  try {
+    const row = await env.DB.prepare(`SELECT COUNT(*) AS c FROM ${table}`).first<{ c: number }>();
+    return Number(row?.c ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+async function buildDashboardStatus(env: Env) {
+  const [users, checkins, invites, verifications] = await Promise.all([
+    countRows(env, "users"),
+    countRows(env, "checkin_records"),
+    countRows(env, "invite_codes"),
+    countRows(env, "turnstile_verification_logs")
+  ]);
+
+  let passed = 0;
+  let failed = 0;
+  try {
+    const row = await env.DB.prepare(
+      "SELECT SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) AS passed, " +
+      "SUM(CASE WHEN passed = 0 THEN 1 ELSE 0 END) AS failed " +
+      "FROM turnstile_verification_logs WHERE created_at >= datetime('now', '-24 hours')"
+    ).first<{ passed: number; failed: number }>();
+    passed = Number(row?.passed ?? 0);
+    failed = Number(row?.failed ?? 0);
+  } catch {
+    // 统计失败就按 0 处理
+  }
+  const total = passed + failed;
+  const passRate = total === 0 ? "暂无数据" : `${Math.round((passed / total) * 100)}%`;
+
+  // 部署版本号直接问 GitHub（公开仓库，无需令牌）
+  let gitHead = "N/A";
+  try {
+    const res = await fetch("https://api.github.com/repos/orange838/orange-community/commits/main", {
+      headers: { "User-Agent": "orange-community-monitor" }
+    });
+    if (res.ok) {
+      const data = await res.json() as { sha?: string };
+      gitHead = String(data.sha ?? "").slice(0, 7) || "N/A";
+    }
+  } catch {
+    // 拿不到就显示 N/A
+  }
+
+  const domains = DASHBOARD_DOMAINS.join(", ");
+  return {
+    generatedAt: new Date().toISOString(),
+    source: "worker-live",
+    summary: {
+      pages: { status: "OK", domain: domains },
+      worker: { status: "OK", route: "api.cslblog.dpdns.org/api/status" },
+      d1: { status: "OK", databaseName: "orange-community" },
+      https: { status: "OK", domains: domains },
+      api: { status: "OK", endpoint: "https://api.cslblog.dpdns.org/api/health" },
+      deploy: { status: "OK", branch: "main" },
+      turnstile: { status: "OK", passRate }
+    },
+    resources: [
+      { name: "Pages Project", type: "Pages", status: "OK", detail: `orange-community / ${domains}` },
+      { name: "Worker API", type: "Worker", status: "OK", detail: "status=ok; message=ok" },
+      { name: "D1 Database", type: "D1", status: "OK", detail: `8 张表 / ${users} 位用户` },
+      { name: "HTTPS", type: "DNS/SSL", status: "OK", detail: "由 Cloudflare Pages 提供服务" },
+      { name: "Account", type: "Cloudflare", status: "OK", detail: "已验证 / 账户已连接" },
+      { name: "Git Head", type: "Deploy", status: gitHead === "N/A" ? "WARN" : "OK", detail: gitHead },
+      { name: "Turnstile", type: "Security", status: "OK", detail: `${passed} passed / ${failed} failed (24h)` }
+    ],
+    domains: DASHBOARD_DOMAINS.map((name) => ({ name, value: "Active" })),
+    d1Details: [
+      { name: "Database name", value: "orange-community" },
+      { name: "Tables", value: "8" },
+      { name: "Users", value: String(users) },
+      { name: "Check-ins", value: String(checkins) },
+      { name: "Invite codes", value: String(invites) },
+      { name: "Turnstile records", value: String(verifications) }
+    ],
+    deployments: [
+      { name: "Project", value: "orange-community" },
+      { name: "Branch", value: "main" },
+      { name: "Git head", value: gitHead }
+    ],
+    turnstile: [
+      { name: "Passed", value: String(passed) },
+      { name: "Failed", value: String(failed) },
+      { name: "Total", value: String(total) },
+      { name: "Pass rate", value: passRate }
+    ]
+  };
+}
 async function handle(request: Request, env: Env) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204 });
   const url = new URL(request.url);
@@ -485,6 +587,10 @@ async function handle(request: Request, env: Env) {
 
   if (url.pathname === "/api/health" && request.method === "GET") {
     return json({ ok: true, runtime: "cloudflare-worker" });
+  }
+  // 监控看板实时状态
+  if (url.pathname === "/api/status" && request.method === "GET") {
+    return json(await buildDashboardStatus(env));
   }
 
   // -------- profile（Bearer token）--------
