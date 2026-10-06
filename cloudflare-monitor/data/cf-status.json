@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-09-15T14:23:15.277Z",
+  "generatedAt": "2026-10-06T12:14:51.931Z",
   "summary": {
     "pages": {
       "status": "OK",
-      "domain": "orange-community-monitor.pages.dev, orange-community.pages.dev, cslblog.dpdns.org, www.cslblog.dpdns.org"
+      "domain": "orange-community.pages.dev, cslblog.dpdns.org, www.cslblog.dpdns.org"
     },
     "worker": {
       "status": "OK",
@@ -15,7 +15,7 @@
     },
     "https": {
       "status": "OK",
-      "domains": "orange-community-monitor.pages.dev, orange-community.pages.dev, cslblog.dpdns.org, www.cslblog.dpdns.org"
+      "domains": "orange-community.pages.dev, cslblog.dpdns.org, www.cslblog.dpdns.org"
     },
     "api": {
       "status": "OK",
@@ -27,7 +27,7 @@
     },
     "turnstile": {
       "status": "OK",
-      "passRate": "100%"
+      "passRate": "暂无数据"
     }
   },
   "resources": [
@@ -35,7 +35,7 @@
       "name": "Pages Project",
       "type": "Pages",
       "status": "OK",
-      "detail": "orange-community / orange-community-monitor.pages.dev, orange-community.pages.dev, cslblog.dpdns.org, www.cslblog.dpdns.org"
+      "detail": "orange-community / orange-community.pages.dev, cslblog.dpdns.org, www.cslblog.dpdns.org"
     },
     {
       "name": "Worker API",
@@ -47,7 +47,7 @@
       "name": "D1 Database",
       "type": "D1",
       "status": "OK",
-      "detail": "61.4 kB / 65 read / 28 write"
+      "detail": "111 kB / 0 read / 0 write"
     },
     {
       "name": "HTTPS",
@@ -65,20 +65,16 @@
       "name": "Git Head",
       "type": "Deploy",
       "status": "OK",
-      "detail": "10ebab5"
+      "detail": "5b61668"
     },
     {
       "name": "Turnstile",
       "type": "Security",
       "status": "OK",
-      "detail": "1 passed / 0 failed (24h)"
+      "detail": "0 passed / 0 failed (24h)"
     }
   ],
   "domains": [
-    {
-      "name": "orange-community-monitor.pages.dev",
-      "value": "Active"
-    },
     {
       "name": "orange-community.pages.dev",
       "value": "Active"
@@ -99,23 +95,23 @@
     },
     {
       "name": "Database size",
-      "value": "61.4 kB"
+      "value": "111 kB"
     },
     {
       "name": "Read queries 24h",
-      "value": "65"
+      "value": "0"
     },
     {
       "name": "Write queries 24h",
-      "value": "28"
+      "value": "0"
     },
     {
       "name": "Rows read 24h",
-      "value": "458"
+      "value": "0"
     },
     {
       "name": "Rows written 24h",
-      "value": "55"
+      "value": "0"
     }
   ],
   "deployments": [
@@ -129,13 +125,13 @@
     },
     {
       "name": "Git head",
-      "value": "10ebab5"
+      "value": "5b61668"
     }
   ],
   "turnstile": [
     {
       "name": "Passed",
-      "value": "1"
+      "value": "0"
     },
     {
       "name": "Failed",
@@ -143,11 +139,11 @@
     },
     {
       "name": "Total",
-      "value": "1"
+      "value": "0"
     },
     {
       "name": "Pass rate",
-      "value": "100%"
+      "value": "暂无数据"
     }
   ]
 }
