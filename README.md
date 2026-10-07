@@ -33,14 +33,11 @@ This is a personal project. Suggestions and issue reports are welcome.
 
 ---
 
-## License & Commercial Use
+## License
 
-This project is licensed under the **GNU General Public License v3.0**.
+This project is licensed under the **Orange Community Non-Commercial License** in [`LICENSE`](./LICENSE). It permits personal, educational, research, and other non-commercial use. Commercial use requires prior written authorization from the copyright holder. This is a custom source-available license, not GPLv3 or an OSI-approved open-source license. Distribution of modified versions also requires prior written permission.
 
-- **Open Source:** You are free to use, modify, and distribute this software for personal or non-commercial purposes, provided that you adhere to the terms of the GPLv3 (e.g., open-sourcing your modifications).
-- **Commercial Use:** If you wish to use this software for commercial purposes, closed-source modification, or private deployment without open-sourcing your code, please contact the author for a commercial license.
-
-📧 **Contact for Commercial Licensing:** 3659793158@qq.com
+See the license file for the complete terms. Contact the author for commercial licensing at 3659793158@qq.com.
 
 ---
 

@@ -484,28 +484,51 @@ async function recordActivity(
 const DASHBOARD_DOMAINS = [
   "orange-community.pages.dev",
   "cslblog.dpdns.org",
-  "www.cslblog.dpdns.org"
+  "www.cslblog.dpdns.org",
+  "orange-community-monitor.pages.dev",
+  "dash.cslblog.dpdns.org"
 ];
 
 async function countRows(env: Env, table: string) {
   try {
     const row = await env.DB.prepare(`SELECT COUNT(*) AS c FROM ${table}`).first<{ c: number }>();
     return Number(row?.c ?? 0);
-  } catch {
-    return 0;
+  } catch (error) {
+    console.error(`Dashboard D1 count failed for ${table}:`, error);
+    return null;
+  }
+}
+
+async function probeUrl(url: string) {
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(5_000)
+    });
+    return {
+      status: response.ok ? "OK" : "WARN",
+      detail: `HTTP ${response.status}`
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.name : "NetworkError";
+    console.error(`Dashboard probe failed for ${new URL(url).hostname}:`, error);
+    return { status: "WARN", detail: `探测失败（${reason}）` };
   }
 }
 
 async function buildDashboardStatus(env: Env) {
-  const [users, checkins, invites, verifications] = await Promise.all([
+  const [users, checkins, invites, verifications, apiHealth, ...domainChecks] = await Promise.all([
     countRows(env, "users"),
     countRows(env, "checkin_records"),
     countRows(env, "invite_codes"),
-    countRows(env, "turnstile_verification_logs")
+    countRows(env, "turnstile_verification_logs"),
+    probeUrl("https://api.cslblog.dpdns.org/api/health"),
+    ...DASHBOARD_DOMAINS.map((domain) => probeUrl(`https://${domain}`))
   ]);
 
-  let passed = 0;
-  let failed = 0;
+  let passed: number | null = null;
+  let failed: number | null = null;
   try {
     const row = await env.DB.prepare(
       "SELECT SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) AS passed, " +
@@ -514,11 +537,15 @@ async function buildDashboardStatus(env: Env) {
     ).first<{ passed: number; failed: number }>();
     passed = Number(row?.passed ?? 0);
     failed = Number(row?.failed ?? 0);
-  } catch {
-    // 统计失败就按 0 处理
+  } catch (error) {
+    console.error("Dashboard Turnstile aggregation failed:", error);
   }
-  const total = passed + failed;
-  const passRate = total === 0 ? "暂无数据" : `${Math.round((passed / total) * 100)}%`;
+  const total = passed === null || failed === null ? null : passed + failed;
+  const passRate = total === null
+    ? "无法获取"
+    : total === 0
+      ? "暂无数据"
+      : `${Math.round(((passed ?? 0) / total) * 100)}%`;
 
   // 部署版本号直接问 GitHub（公开仓库，无需令牌）
   let gitHead = "N/A";
@@ -535,35 +562,44 @@ async function buildDashboardStatus(env: Env) {
   }
 
   const domains = DASHBOARD_DOMAINS.join(", ");
+  const pageDomains = DASHBOARD_DOMAINS.map((domain, index) => ({
+    name: domain,
+    value: domainChecks[index].status === "OK" ? "正常" : domainChecks[index].detail
+  }));
+  const pagesStatus = domainChecks.every((check) => check.status === "OK") ? "OK" : "WARN";
+  const d1Counts = [users, checkins, invites, verifications];
+  const d1Status = d1Counts.every((count) => count !== null) ? "OK" : "WARN";
+  const d1Value = (count: number | null) => count === null ? "无法获取" : String(count);
+  const turnstileStatus = passed === null || failed === null || verifications === null ? "WARN" : "OK";
   return {
     generatedAt: new Date().toISOString(),
     source: "worker-live",
     summary: {
-      pages: { status: "OK", domain: domains },
-      worker: { status: "OK", route: "api.cslblog.dpdns.org/api/status" },
-      d1: { status: "OK", databaseName: "orange-community" },
-      https: { status: "OK", domains: domains },
-      api: { status: "OK", endpoint: "https://api.cslblog.dpdns.org/api/health" },
-      deploy: { status: "OK", branch: "main" },
-      turnstile: { status: "OK", passRate }
+      pages: { status: pagesStatus, domain: domains },
+      worker: { status: apiHealth.status, route: "api.cslblog.dpdns.org/api/status" },
+      d1: { status: d1Status, databaseName: "orange-community" },
+      https: { status: pagesStatus, domains: domains },
+      api: { status: apiHealth.status, endpoint: "https://api.cslblog.dpdns.org/api/health" },
+      deploy: { status: gitHead === "N/A" ? "WARN" : "OK", branch: "main" },
+      turnstile: { status: turnstileStatus, passRate }
     },
     resources: [
-      { name: "Pages Project", type: "Pages", status: "OK", detail: `orange-community / ${domains}` },
-      { name: "Worker API", type: "Worker", status: "OK", detail: "status=ok; message=ok" },
-      { name: "D1 Database", type: "D1", status: "OK", detail: `8 张表 / ${users} 位用户` },
-      { name: "HTTPS", type: "DNS/SSL", status: "OK", detail: "由 Cloudflare Pages 提供服务" },
+      { name: "Pages Project", type: "Pages", status: pagesStatus, detail: `orange-community / ${domains}` },
+      { name: "Worker API", type: "Worker", status: apiHealth.status, detail: apiHealth.detail },
+      { name: "D1 Database", type: "D1", status: d1Status, detail: d1Status === "OK" ? `8 张表 / ${users} 位用户` : "部分数据库统计无法获取" },
+      { name: "HTTPS", type: "DNS/SSL", status: pagesStatus, detail: domainChecks.map((check, index) => `${DASHBOARD_DOMAINS[index]}：${check.detail}`).join("；") },
       { name: "Account", type: "Cloudflare", status: "OK", detail: "已验证 / 账户已连接" },
       { name: "Git Head", type: "Deploy", status: gitHead === "N/A" ? "WARN" : "OK", detail: gitHead },
-      { name: "Turnstile", type: "Security", status: "OK", detail: `${passed} passed / ${failed} failed (24h)` }
+      { name: "Turnstile", type: "Security", status: turnstileStatus, detail: passed === null || failed === null ? "最近 24 小时统计无法获取" : `${passed} passed / ${failed} failed (24h)` }
     ],
-    domains: DASHBOARD_DOMAINS.map((name) => ({ name, value: "Active" })),
+    domains: pageDomains,
     d1Details: [
       { name: "Database name", value: "orange-community" },
       { name: "Tables", value: "8" },
-      { name: "Users", value: String(users) },
-      { name: "Check-ins", value: String(checkins) },
-      { name: "Invite codes", value: String(invites) },
-      { name: "Turnstile records", value: String(verifications) }
+      { name: "Users", value: d1Value(users) },
+      { name: "Check-ins", value: d1Value(checkins) },
+      { name: "Invite codes", value: d1Value(invites) },
+      { name: "Turnstile records", value: d1Value(verifications) }
     ],
     deployments: [
       { name: "Project", value: "orange-community" },
@@ -571,9 +607,9 @@ async function buildDashboardStatus(env: Env) {
       { name: "Git head", value: gitHead }
     ],
     turnstile: [
-      { name: "Passed", value: String(passed) },
-      { name: "Failed", value: String(failed) },
-      { name: "Total", value: String(total) },
+      { name: "Passed", value: d1Value(passed) },
+      { name: "Failed", value: d1Value(failed) },
+      { name: "Total", value: d1Value(total) },
       { name: "Pass rate", value: passRate }
     ]
   };
