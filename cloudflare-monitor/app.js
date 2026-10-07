@@ -18,6 +18,9 @@ function formatStatus(value) {
   if (normalized.includes('err') || normalized.includes('error') || normalized.includes('failed') || normalized.includes('fail')) {
     return '异常';
   }
+  if (normalized === 'n/a' || normalized.includes('unknown') || normalized.includes('无法获取')) {
+    return '未知';
+  }
   return value || 'N/A';
 }
 
@@ -25,6 +28,9 @@ function badgeClass(status) {
   const normalized = String(status || '').toLowerCase();
   if (normalized.includes('ok') || normalized.includes('healthy') || normalized.includes('online') || normalized === 'success' || normalized === 'active') {
     return 'ok';
+  }
+  if (normalized === 'n/a' || normalized === 'unknown' || normalized.includes('未知') || normalized.includes('无法获取')) {
+    return 'warn';
   }
   if (normalized.includes('warn') || normalized.includes('warning') || normalized.includes('partial')) {
     return 'warn';
@@ -119,17 +125,13 @@ function renderList(target, items) {
 
 const LIVE_STATUS_URL = 'https://api.cslblog.dpdns.org/api/status';
 
-// 优先读 Worker 的实时接口，接口不可用时退回仓库里的静态数据文件
+// 只显示实时数据，避免接口不可用时把过期快照误当成当前状态
 async function fetchDashboardData() {
-  try {
-    const live = await fetch(LIVE_STATUS_URL, { cache: 'no-store' });
-    if (live.ok) return await live.json();
-  } catch (error) {
-    // 忽略，走本地兜底
+  const live = await fetch(LIVE_STATUS_URL, { cache: 'no-store' });
+  if (!live.ok) {
+    throw new Error(`实时状态接口返回 HTTP ${live.status}`);
   }
-  const fallback = await fetch('./data/cf-status.json');
-  if (!fallback.ok) throw new Error('Fetch failed');
-  return await fallback.json();
+  return await live.json();
 }
 async function loadDashboard() {
   try {
@@ -144,24 +146,26 @@ async function loadDashboard() {
     const ts = new Date(data.generatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
     updatedAt.textContent = `更新时间：${ts}`;
   } catch (error) {
+    console.error('监控数据加载失败：', error);
     renderSummary({
-      pages: { status: 'N/A', domain: '无法加载' },
-      worker: { status: 'N/A', route: '无法加载' },
-      d1: { status: 'N/A', databaseName: '无法加载' },
-      https: { status: 'N/A', domains: '无法加载' },
-      api: { status: 'N/A', endpoint: '无法加载' },
-      deploy: { status: 'N/A', branch: 'main' }
+      pages: { status: '未知', domain: '实时状态暂不可用' },
+      worker: { status: '未知', route: '实时状态暂不可用' },
+      d1: { status: '未知', databaseName: '实时状态暂不可用' },
+      https: { status: '未知', domains: '实时状态暂不可用' },
+      api: { status: '未知', endpoint: '实时状态暂不可用' },
+      deploy: { status: '未知', branch: '实时状态暂不可用' }
     });
 
     renderResourceTable([
-      { name: '状态文件', type: '本地数据', status: 'warn', detail: '未能读取 Cloudflare 状态文件，请先执行 gather-cf-status.mjs' }
+      { name: '实时监控接口', type: 'Worker API', status: 'warn', detail: '无法读取实时状态；请稍后重试，不展示过期快照' }
     ]);
 
-    renderList(domainList, [{ name: '暂无', value: '请先生成数据' }]);
-    renderList(d1List, [{ name: '暂无', value: '请先生成数据' }]);
-    renderList(deploymentList, [{ name: '暂无', value: '请先生成数据' }]);
-    renderList(turnstileList, [{ name: '暂无', value: '请先生成数据' }]);
-    updatedAt.textContent = '更新时间：未生成';
+    const unavailable = [{ name: '状态', value: '未知' }];
+    renderList(domainList, unavailable);
+    renderList(d1List, unavailable);
+    renderList(deploymentList, unavailable);
+    renderList(turnstileList, unavailable);
+    updatedAt.textContent = '实时状态暂不可用';
   }
 }
 
