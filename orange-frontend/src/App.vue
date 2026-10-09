@@ -150,10 +150,10 @@ watch(currentUser.info, (val) => {
   if (isSsoMode.value && val && !authAsked.value) askAuth()
 })
 
-// 未绑定邮箱的账号：每次登录成功后提醒一次（SSO 弹窗模式不打扰）
+// 未绑定邮箱的账号：每次登录成功后提醒一次（常规登录与 SSO/OAuth 均生效）
 let emailReminded = false
 watch(currentUser.info, async (val) => {
-  if (isSsoMode.value || emailReminded) return
+  if (emailReminded) return
   if (!val || val.email) return
   emailReminded = true
   const go = await toastRef.value?.showConfirm(
@@ -162,14 +162,14 @@ watch(currentUser.info, async (val) => {
   if (go) router.push({ path: '/profile', query: { bind: '1' } })
 })
 
-// 管理员改过我的资料：下次登录弹窗告知（SSO 弹窗模式不打扰）
+// 管理员改过我的资料：下次登录弹窗告知（常规登录与 SSO/OAuth 均生效）
 let msgChecked = false
 watch(currentUser.info, async (val) => {
   if (!val) {
     msgChecked = false
     return
   }
-  if (isSsoMode.value || msgChecked || !currentUser.token) return
+  if (msgChecked || !currentUser.token) return
   msgChecked = true
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/messages`, {
