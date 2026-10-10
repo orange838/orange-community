@@ -1,5 +1,5 @@
 <template>
-  <div class="modal-overlay" @click.self="handleClose">
+  <div class="modal-overlay" @mousedown.self="handleClose">
     <div class="modal-content">
       <h2 class="modal-title">{{ resetMode ? '重置密码' : (isLogin ? '欢迎回来' : '注册账号') }}</h2>
 
