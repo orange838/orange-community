@@ -151,16 +151,20 @@ watch(currentUser.info, (val) => {
 })
 
 // 未绑定邮箱的账号：每次登录成功后提醒一次（常规登录与 SSO/OAuth 均生效）
+// 注意：不能在 watch 里直接 { immediate: true }，因为 Toast 子组件在父组件 mount 后才挂载，
+// immediate 同步触发时 toastRef.value 为 null，showConfirm 会被静默跳过且守卫已置位，永不弹。
+// 改为函数 + watch（登录变化）+ onMounted（刷新时已有登录态）各调一次。
 let emailReminded = false
-watch(currentUser.info, async (val) => {
+const remindBindEmail = async () => {
   if (emailReminded) return
-  if (!val || val.email) return
+  if (!currentUser.info || currentUser.info.email) return
   emailReminded = true
   const go = await toastRef.value?.showConfirm(
     '你的账号还没有绑定邮箱。绑定后可用于找回账号、接收登录验证码。要现在去绑定吗？'
   )
   if (go) router.push({ path: '/profile', query: { bind: '1' } })
-}, { immediate: true })
+}
+watch(currentUser.info, () => { remindBindEmail() })
 
 // 管理员改过我的资料：下次登录弹窗告知（常规登录与 SSO/OAuth 均生效）
 let msgChecked = false
@@ -216,6 +220,7 @@ onMounted(() => {
   window.addEventListener('show-toast', handleGlobalToast)
   window.addEventListener('show-alert', handleGlobalAlert)
   handleSso()
+  remindBindEmail()  // Toast 已挂载后再检查一次，处理刷新/已有登录态场景
 
   // 通过邀请链接（/?invite=xxx）直接打开时，自动弹出注册弹窗
   // （邀请码预填由 LoginModal 挂载时的 onMounted 读取 URL 完成）
