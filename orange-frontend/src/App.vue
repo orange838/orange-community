@@ -160,7 +160,7 @@ watch(currentUser.info, async (val) => {
     '你的账号还没有绑定邮箱。绑定后可用于找回账号、接收登录验证码。要现在去绑定吗？'
   )
   if (go) router.push({ path: '/profile', query: { bind: '1' } })
-})
+}, { immediate: true })
 
 // 管理员改过我的资料：下次登录弹窗告知（常规登录与 SSO/OAuth 均生效）
 let msgChecked = false
@@ -190,7 +190,7 @@ watch(currentUser.info, async (val) => {
   } catch (e) {
     // 拉取失败不影响正常使用
   }
-})
+}, { immediate: true })
 
 const openModal = (mode) => {
   isLoginMode.value = mode
