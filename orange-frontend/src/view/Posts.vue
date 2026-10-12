@@ -43,6 +43,7 @@
         <div class="post-head">
           <span class="post-username">{{ p.username }}</span>
           <span class="post-time">{{ formatTime(p.created_at) }}</span>
+          <button v-if="canDelete(p)" class="del-btn" @click="deletePost(p)">删除</button>
         </div>
         <h3 class="post-title">{{ p.title }}</h3>
         <p class="post-content">{{ p.content }}</p>
@@ -83,6 +84,27 @@ const loadPosts = async () => {
     posts.value = data.posts || []
   } catch {
     posts.value = []
+  }
+}
+
+const canDelete = (p) =>
+  (currentUser.info && (currentUser.info.id === p.user_id || currentUser.info.username === p.username)) ||
+  currentUser.info?.role === 'admin'
+
+const deletePost = async (p) => {
+  const ok = window.confirm(`确定删除这条帖子？`)
+  if (!ok) return
+  try {
+    const res = await fetch(`${API}/api/posts?id=${p.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) return toast(data.error || '删除失败', 'error')
+    toast('已删除', 'success')
+    await loadPosts()
+  } catch (e) {
+    toast(e.message || '删除失败', 'error')
   }
 }
 
@@ -192,6 +214,16 @@ onMounted(loadPosts)
   box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);
 }
 .post-head { display: flex; justify-content: space-between; align-items: center; }
+.del-btn {
+  margin-left: 8px;
+  padding: 3px 12px;
+  background: #f56c6c;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
 .post-username { color: #ff9900; font-weight: 600; font-size: 14px; }
 .post-time { color: #909399; font-size: 12px; }
 .post-title { margin: 8px 0 6px; color: #303133; font-size: 16px; }

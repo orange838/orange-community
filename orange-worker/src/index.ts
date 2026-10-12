@@ -66,10 +66,15 @@ function filterProfanity(text: string): { safe: boolean; filteredText: string; p
     leetspeakLevel: "aggressive" as const,
     normalizeUnicode: true,
     replaceWith: "***",
+    // 豁免常用字"逼"，避免"牛逼"误过滤（"傻逼"仍靠整词命中拦截）
+    ignoreWords: ["逼"],
     // 补充内置词库缺失的常见中文网络敏感词/拼音缩写（如 SB/CNM 等）
     customWords: [
       "sb", "cnm", "cnmb", "nmd", "tmd", "wqnmlgb", "草泥马", "尼玛",
-      "牛批", "牛b", "王八蛋", "去你妈的", "狗日的", "色情", "约炮"
+      "牛批", "牛b", "王八蛋", "去你妈的", "狗日的", "色情", "约炮",
+      "md", "jb", "滚犊子", "废物", "白痴", "智障", "蠢货", "傻狗", "舔狗",
+      "婊子", "贱人", "贱货", "畜生", "杂种", "狗东西", "绿帽", "他妈的",
+      "奶奶的", "操你", "日你", "渣男", "人渣"
     ]
   });
   const zh = zhFilter.checkProfanity(processed);
@@ -1073,6 +1078,23 @@ async function handle(request: Request, env: Env) {
       "SELECT id, user_id, username, title, content, created_at FROM posts ORDER BY id DESC LIMIT ?"
     ).bind(limit).all<Post>();
     return json({ posts: rows.results });
+  }
+
+  // DELETE /api/posts?id=：删帖（作者本人或管理员）
+  if (url.pathname === "/api/posts" && request.method === "DELETE") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const user = await getUserByAuth(env.DB, auth);
+    if (!user) return json({ error: "未登录" }, 401);
+    const id = Number(url.searchParams.get("id"));
+    if (!id) return json({ error: "缺少帖子 id" }, 400);
+    const post = await env.DB.prepare("SELECT * FROM posts WHERE id = ?").bind(id).first<Post>();
+    if (!post) return json({ error: "帖子不存在" }, 404);
+    if (post.user_id !== user.id && user.role !== "admin") {
+      return json({ error: "无权删除该帖子" }, 403);
+    }
+    await env.DB.prepare("DELETE FROM posts WHERE id = ?").bind(id).run();
+    return json({ success: true, id });
   }
 
   // POST /api/posts：发帖（鉴权 + 敏感词过滤后入库）
