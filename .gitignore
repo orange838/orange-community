@@ -51,3 +51,7 @@ orange-backend/smoke_invite.py
 /AGENTS.md
 /AI-HANDOFF.md
 /社区类项目搭建指南.docx
+
+# 本地产物（测试截图/工具脚本，不入库）
+output/
+build-guide.js
