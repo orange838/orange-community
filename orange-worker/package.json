@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "glin-profanity": "^3.3.0",
     "scrypt-js": "^3.0.1"
   },
   "devDependencies": {

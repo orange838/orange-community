@@ -83,3 +83,13 @@ CREATE TABLE IF NOT EXISTS user_messages (
   is_read INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+
+-- 帖子广场：用户发帖
+CREATE TABLE IF NOT EXISTS posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  username TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

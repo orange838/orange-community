@@ -5,6 +5,7 @@
       <div class="logo">🍊 橙子社区</div>
       <ul class="nav-menu">
         <li><router-link to="/" active-class="active">首页</router-link></li>
+        <li><router-link to="/posts" active-class="active">帖子广场</router-link></li>
         <li><router-link to="/checkin" active-class="active">签到</router-link></li>
         <li><router-link to="/notice" active-class="active">公告</router-link></li>
         <li><router-link to="/profile" active-class="active">个人信息</router-link></li>

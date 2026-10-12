@@ -1,4 +1,5 @@
 import { scrypt } from "scrypt-js";
+import { Filter } from "glin-profanity";
 
 interface Env {
   DB: D1Database;
@@ -28,11 +29,66 @@ type User = {
   cpoauth_username?: string | null;
 };
 
+type Post = {
+  id: number;
+  user_id: number;
+  username: string;
+  title: string;
+  content: string;
+  created_at: string;
+};
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" }
   });
+
+// 敏感词过滤（中英文 + 变体词，命中替换为 ***）
+// 英文用 wordBoundaries:true 精确词匹配（避免 class/grass 子串误报）；中文无空格边界，须 wordBoundaries:false。
+function filterProfanity(text: string): { safe: boolean; filteredText: string; profaneWords: string[] } {
+  const profaneWords: string[] = [];
+  const enFilter = new Filter({
+    languages: ["english"],
+    wordBoundaries: true,
+    detectLeetspeak: true,
+    leetspeakLevel: "aggressive" as const,
+    normalizeUnicode: true,
+    replaceWith: "***"
+  });
+  const en = enFilter.checkProfanity(text);
+  profaneWords.push(...en.profaneWords);
+  let processed = en.processedText ?? text;
+  const zhFilter = new Filter({
+    languages: ["chinese"],
+    wordBoundaries: false,
+    detectLeetspeak: true,
+    leetspeakLevel: "aggressive" as const,
+    normalizeUnicode: true,
+    replaceWith: "***"
+  });
+  const zh = zhFilter.checkProfanity(processed);
+  profaneWords.push(...zh.profaneWords);
+  processed = zh.processedText ?? processed;
+  return { safe: profaneWords.length === 0, filteredText: processed, profaneWords: [...new Set(profaneWords)] };
+}
+
+// 帖子表自动建表（幂等；worker 对 DB 有写权限，部署后首次调用自动创建）
+let postsSchemaPromise: Promise<void> | null = null;
+function ensurePostsTable(db: D1Database) {
+  if (!postsSchemaPromise) {
+    postsSchemaPromise = db.exec(
+      "CREATE TABLE IF NOT EXISTS posts (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "user_id INTEGER NOT NULL, " +
+        "username TEXT NOT NULL, " +
+        "title TEXT NOT NULL, " +
+        "content TEXT NOT NULL, " +
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    ).then(() => undefined).catch((e) => { postsSchemaPromise = null; throw e; });
+  }
+  return postsSchemaPromise;
+}
 
 const allowedOrigins = new Set([
   "https://cslblog.dpdns.org",
@@ -81,6 +137,8 @@ const getActivityName = (path: string) => ({
   "/api/reset-password": "重置密码",
   "/api/login": "登录账号",
   "/api/checkin": "签到",
+  "/api/posts": "发帖",
+  "GET /api/posts": "查看帖子广场",
   "/api/admin/users": "查看用户管理",
   "/api/admin/users/update": "修改用户信息",
   "/api/admin/logs": "查看操作日志",
@@ -999,6 +1057,51 @@ async function handle(request: Request, env: Env) {
     const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE user_id = ?")
       .bind(user.id).first<{ count: number }>();
     return json({ message: "签到成功", points: 5, orange_balance: balance, last_sign_in_date: date, sign_in_count: Number(count?.count ?? 0), has_checked_in_today: true });
+  }
+
+  // -------- 帖子广场 --------
+  // GET /api/posts：帖子列表（倒序，可选 limit）
+  if (url.pathname === "/api/posts" && request.method === "GET") {
+    await ensurePostsTable(env.DB);
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 50) || 50, 1), 100);
+    const rows = await env.DB.prepare(
+      "SELECT id, user_id, username, title, content, created_at FROM posts ORDER BY id DESC LIMIT ?"
+    ).bind(limit).all<Post>();
+    return json({ posts: rows.results });
+  }
+
+  // POST /api/posts：发帖（鉴权 + 敏感词过滤后入库）
+  if (url.pathname === "/api/posts" && request.method === "POST") {
+    await ensurePostsTable(env.DB);
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const user = await getUserByAuth(env.DB, auth);
+    if (!user) return json({ error: "未登录" }, 401);
+    const title = String(body.title ?? "").trim();
+    const content = String(body.content ?? "").trim();
+    if (!title) return json({ error: "标题不能为空" }, 400);
+    if (title.length > 80) return json({ error: "标题最长 80 字" }, 400);
+    if (!content) return json({ error: "内容不能为空" }, 400);
+    if (content.length > 5000) return json({ error: "内容最长 5000 字" }, 400);
+    const titleResult = filterProfanity(title);
+    const contentResult = filterProfanity(content);
+    const post = await env.DB.prepare(
+      "INSERT INTO posts (user_id, username, title, content, created_at) VALUES (?, ?, ?, ?, ?)"
+    ).bind(
+      user.id,
+      user.username,
+      titleResult.filteredText,
+      contentResult.filteredText,
+      new Date().toISOString()
+    ).first<Post>();
+    const profaneWords = [...new Set([...titleResult.profaneWords, ...contentResult.profaneWords])];
+    return json({
+      safe: profaneWords.length === 0,
+      filteredTitle: titleResult.filteredText,
+      filteredContent: contentResult.filteredText,
+      profaneWords,
+      post: post ?? null
+    });
   }
 
   // -------- user/messages（Bearer token）：管理员改过资料后给本人看的提示 --------
