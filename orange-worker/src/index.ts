@@ -65,7 +65,12 @@ function filterProfanity(text: string): { safe: boolean; filteredText: string; p
     detectLeetspeak: true,
     leetspeakLevel: "aggressive" as const,
     normalizeUnicode: true,
-    replaceWith: "***"
+    replaceWith: "***",
+    // 补充内置词库缺失的常见中文网络敏感词/拼音缩写（如 SB/CNM 等）
+    customWords: [
+      "sb", "cnm", "cnmb", "nmd", "tmd", "wqnmlgb", "草泥马", "尼玛",
+      "牛批", "牛b", "王八蛋", "去你妈的", "狗日的", "色情", "约炮"
+    ]
   });
   const zh = zhFilter.checkProfanity(processed);
   profaneWords.push(...zh.profaneWords);
