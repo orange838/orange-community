@@ -63,7 +63,8 @@ const submitting = ref(false)
 const hitWords = ref([])
 const lastResult = ref(null)
 
-const isLoggedIn = computed(() => Boolean(currentUser.info?.email))
+// 用 token 判断登录（email 可能为空——未绑邮箱的账号也是已登录用户，不能据此判断）
+const isLoggedIn = computed(() => Boolean(currentUser.token))
 const goLogin = () => window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg: '请先登录后再发帖', type: 'error' } }))
 
 const toast = (msg, type) => window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
