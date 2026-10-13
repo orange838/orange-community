@@ -1094,6 +1094,12 @@ async function handle(request: Request, env: Env) {
       return json({ error: "无权删除该帖子" }, 403);
     }
     await env.DB.prepare("DELETE FROM posts WHERE id = ?").bind(id).run();
+    // 管理员删除了别人的帖子：给作者发系统消息（作者自己删 / 管理员删自己 不通知）
+    if (user.role === "admin" && post.user_id !== user.id) {
+      await env.DB.prepare(
+        "INSERT INTO user_messages (user_id, content, is_read, created_at) VALUES (?, ?, 0, ?)"
+      ).bind(post.user_id, `管理员删除了你的帖子《${post.title}》`, new Date().toISOString()).run();
+    }
     return json({ success: true, id });
   }
 

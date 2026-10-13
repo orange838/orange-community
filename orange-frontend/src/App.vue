@@ -29,6 +29,22 @@
           <!-- 根据登录状态显示不同内容 -->
           <template v-if="$user.info">
             <span class="username">👋 {{ $user.info.username }}</span>
+            <!-- 消息铃铛 + 未读计数 -->
+            <div class="msg-bell-wrap" @click="toggleMsgPanel">
+              <span class="msg-bell">🔔</span>
+              <span v-if="unreadCount > 0" class="msg-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+            </div>
+            <!-- 消息面板 -->
+            <div v-if="showMsgPanel" class="msg-panel">
+              <div class="msg-panel-head">系统消息<button class="msg-close" @click="showMsgPanel = false">✕</button></div>
+              <div v-if="msgList.length" class="msg-list">
+                <div v-for="m in msgList" :key="m.id" class="msg-item">
+                  <p class="msg-content">{{ m.content }}</p>
+                  <span class="msg-time">{{ formatMsgTime(m.created_at) }}</span>
+                </div>
+              </div>
+              <p v-else class="msg-empty">暂无消息</p>
+            </div>
             <!-- 退出按钮 -->
             <button class="btn-logout" @click="handleLogout">退出登录</button>
           </template>
@@ -167,33 +183,59 @@ const remindBindEmail = async () => {
 }
 watch(currentUser.info, () => { remindBindEmail() })
 
-// 管理员改过我的资料：下次登录弹窗告知（常规登录与 SSO/OAuth 均生效）
-let msgChecked = false
-watch(currentUser.info, async (val) => {
-  if (!val) {
-    msgChecked = false
-    return
-  }
-  if (msgChecked || !currentUser.token) return
-  msgChecked = true
+// 消息系统：顶部铃铛显示未读数，点击弹出消息面板（不再弹窗）
+const unreadCount = ref(0)
+const showMsgPanel = ref(false)
+const msgList = ref([])
+const msgTimer = ref(null)
+
+const fetchUnread = async () => {
+  if (!currentUser.token) return
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/messages`, {
       headers: { Authorization: `Bearer ${currentUser.token}` }
     })
     if (!res.ok) return
     const data = await res.json()
-    const list = data.messages || []
-    if (!list.length) return
-    await toastRef.value?.showAlert(
-      list.map((m) => m.content).join('\n\n'),
-      '来自管理员的提醒'
-    )
-    await fetch(`${import.meta.env.VITE_API_URL}/api/user/messages/read`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${currentUser.token}` }
-    })
-  } catch (e) {
-    // 拉取失败不影响正常使用
+    unreadCount.value = (data.messages || []).length
+  } catch (e) { /* 忽略 */ }
+}
+
+const formatMsgTime = (t) => {
+  if (!t) return ''
+  const d = new Date(t)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const toggleMsgPanel = async () => {
+  if (!currentUser.token) return
+  showMsgPanel.value = !showMsgPanel.value
+  if (showMsgPanel.value) {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/messages`, {
+        headers: { Authorization: `Bearer ${currentUser.token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        msgList.value = data.messages || []
+      }
+      // 打开后标记已读并清空未读计数
+      await fetch(`${import.meta.env.VITE_API_URL}/api/user/messages/read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${currentUser.token}` }
+      })
+      unreadCount.value = 0
+    } catch (e) { /* 忽略 */ }
+  }
+}
+
+// 登录后拉取未读数并定时刷新；退出时清除定时器
+watch(currentUser.info, (val) => {
+  if (msgTimer.value) { clearInterval(msgTimer.value); msgTimer.value = null }
+  if (val && currentUser.token) {
+    fetchUnread()
+    msgTimer.value = setInterval(fetchUnread, 30000)
   }
 }, { immediate: true })
 
@@ -281,6 +323,52 @@ const handleLogout = async () => {
 .btn-login { background-color: #fff; border: 1px solid #dcdfe6; color: #606266; }
 .btn-register { background-color: #ff9900; color: #fff; }
 .btn-logout { background-color: #f56c6c; color: #fff; }
+.msg-bell-wrap { position: relative; cursor: pointer; font-size: 20px; display: flex; align-items: center; }
+.msg-bell { line-height: 1; }
+.msg-badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+.msg-panel {
+  position: absolute;
+  top: 60px;
+  right: 30px;
+  width: 320px;
+  max-height: 400px;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  z-index: 999;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.msg-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  font-weight: 600;
+  color: #303133;
+  border-bottom: 1px solid #ebeef5;
+}
+.msg-close { border: none; background: none; font-size: 14px; color: #909399; cursor: pointer; }
+.msg-list { max-height: 320px; overflow-y: auto; }
+.msg-item { padding: 12px 16px; border-bottom: 1px solid #f2f3f5; }
+.msg-content { margin: 0 0 4px; color: #303133; font-size: 13px; line-height: 1.6; }
+.msg-time { color: #909399; font-size: 12px; }
+.msg-empty { padding: 24px; text-align: center; color: #909399; font-size: 13px; }
 .btn-logout:hover { background-color: #e05c5c; }
 .content-area { flex: 1; padding: 30px; overflow-y: auto; }
 .site-footer { display: flex; justify-content: center; align-items: center; padding: 14px 20px 18px; background-color: #f5f7fa; }
