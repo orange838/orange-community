@@ -217,9 +217,20 @@ const handleGlobalAlert = (event) => {
   }
 }
 
+// 全局「确认」弹窗：橙色确认框（站内统一风格，替代 window.confirm）
+const handleGlobalConfirm = (event) => {
+  const { message, resolve } = event.detail || {}
+  if (message && toastRef.value?.showConfirm) {
+    toastRef.value.showConfirm(message).then((ok) => { if (typeof resolve === 'function') resolve(ok) })
+  } else if (typeof resolve === 'function') {
+    resolve(false)
+  }
+}
+
 onMounted(() => {
   window.addEventListener('show-toast', handleGlobalToast)
   window.addEventListener('show-alert', handleGlobalAlert)
+  window.addEventListener('show-confirm', handleGlobalConfirm)
   handleSso()
   remindBindEmail()  // Toast 已挂载后再检查一次，处理刷新/已有登录态场景
 
@@ -236,6 +247,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('show-toast', handleGlobalToast)
   window.removeEventListener('show-alert', handleGlobalAlert)
+  window.removeEventListener('show-confirm', handleGlobalConfirm)
 })
 
 // 【修改】退出登录逻辑 - 使用自定义弹窗

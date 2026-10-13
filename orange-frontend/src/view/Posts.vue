@@ -91,8 +91,12 @@ const canDelete = (p) =>
   (currentUser.info && (currentUser.info.id === p.user_id || currentUser.info.username === p.username)) ||
   currentUser.info?.role === 'admin'
 
+const confirmDelete = (message) => new Promise((resolve) => {
+  window.dispatchEvent(new CustomEvent('show-confirm', { detail: { message, resolve } }))
+})
+
 const deletePost = async (p) => {
-  const ok = window.confirm(`确定删除这条帖子？`)
+  const ok = await confirmDelete('确定删除这条帖子？')
   if (!ok) return
   try {
     const res = await fetch(`${API}/api/posts?id=${p.id}`, {
