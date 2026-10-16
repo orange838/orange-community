@@ -316,7 +316,7 @@ watch(() => currentUser.token, (token) => {
   }
 })
 
-watch(currentUser.info, (user, previousUser) => {
+watch(() => currentUser.info, (user, previousUser) => {
   if (user && !previousUser && currentUser.token && appMounted) {
     checkedBanStatusToken = null
     checkedBanStatus = false
