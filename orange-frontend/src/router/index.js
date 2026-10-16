@@ -28,7 +28,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
-  if (to.path === '/admin' && currentUser.info?.role !== 'admin') {
+  if (to.path === '/admin' && !['admin', 'super_admin'].includes(currentUser.info?.role)) {
     next('/profile')
     return
   }

@@ -51,6 +51,7 @@
               <th>邮箱</th>
               <th>橙子数量</th>
               <th>角色</th>
+              <th>封禁状态</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -67,13 +68,26 @@
                 />
               </td>
               <td>
-                <select v-model="user.role" class="role-select" :disabled="isProtectedUser(user)">
+                <select
+                  v-model="user.role"
+                  class="role-select"
+                  :disabled="isProtectedUser(user) || (user.role === 'super_admin' && !canManageSuperAdmins)"
+                >
                   <option value="admin">管理员</option>
                   <option value="user">普通用户</option>
+                  <option v-if="canManageSuperAdmins || user.role === 'super_admin'" value="super_admin">超级管理员</option>
                 </select>
               </td>
               <td>
+                <span :class="user.is_banned ? 'ban-state banned' : 'ban-state'">
+                  {{ user.is_banned ? (user.banned_until ? `临时封禁 ${user.ban_duration_days} 天，至 ${formatLogTime(user.banned_until)}` : '永久封禁') : '正常' }}
+                </span>
+                <small v-if="user.is_banned && user.ban_reason" class="ban-reason">原因：{{ user.ban_reason }}</small>
+              </td>
+              <td>
                 <button class="save-btn" @click="saveUser(user)">保存</button>
+                <button v-if="canBan(user) && !user.is_banned" class="ban-btn" @click="openBanDialog(user)">封禁</button>
+                <button v-if="canBan(user) && user.is_banned" class="unban-btn" @click="unbanUser(user)">解封</button>
               </td>
             </tr>
           </tbody>
@@ -154,6 +168,30 @@
         </table>
       </div>
     </div>
+    <div v-if="banTarget" class="ban-modal-mask" @click.self="closeBanDialog">
+      <section class="ban-modal">
+        <h3>封禁账号：{{ banTarget.username }}</h3>
+        <label>
+          封禁类型
+          <select v-model="banType" class="ban-control">
+            <option value="permanent">永久封禁</option>
+            <option value="temporary">临时封禁</option>
+          </select>
+        </label>
+        <label v-if="banType === 'temporary'">
+          封禁天数
+          <input v-model="banDays" class="ban-control" type="number" min="1" step="1" placeholder="请输入正整数天数" />
+        </label>
+        <label>
+          封禁原因（必填，用户登录时可见）
+          <textarea v-model="banReason" class="ban-control" maxlength="500" rows="4" placeholder="请填写封禁原因"></textarea>
+        </label>
+        <div class="ban-modal-actions">
+          <button class="save-btn" :disabled="banSaving" @click="banUser">{{ banSaving ? '处理中…' : '确认封禁' }}</button>
+          <button class="cancel-btn" :disabled="banSaving" @click="closeBanDialog">取消</button>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -166,6 +204,12 @@ const loading = ref(true)
 const logs = ref([])
 const logsLoading = ref(true)
 const activeTab = ref('users')
+const canManageSuperAdmins = ref(false)
+const banTarget = ref(null)
+const banType = ref('permanent')
+const banDays = ref('')
+const banReason = ref('')
+const banSaving = ref(false)
 
 // 邀请码状态
 const invites = ref([])
@@ -174,6 +218,13 @@ const inviteDays = ref(7)
 const generating = ref(false)
 
 const isProtectedUser = (user) => Boolean(user?.is_protected)
+const isSelf = (user) =>
+  (user.email && user.email === currentUser.info?.email) ||
+  user.username === currentUser.info?.username
+const canBan = (user) =>
+  !isProtectedUser(user) &&
+  user.role !== 'super_admin' &&
+  !isSelf(user)
 
 const showToast = (msg, type = 'success') => {
   window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
@@ -198,7 +249,7 @@ const formatLogTime = (value) => {
 }
 
 const loadInvites = async () => {
-  if (!currentUser.info?.email) return
+  if (!currentUser.token) return
 
   invitesLoading.value = true
   try {
@@ -216,7 +267,7 @@ const loadInvites = async () => {
 }
 
 const createInvite = async () => {
-  if (!currentUser.info?.email) {
+  if (!currentUser.token) {
     showToast('未登录，无法生成邀请码', 'error')
     return
   }
@@ -254,7 +305,7 @@ const copyInvite = async (code) => {
 }
 
 const loadLogs = async () => {
-  if (!currentUser.info?.email) return
+  if (!currentUser.token) return
 
   logsLoading.value = true
   try {
@@ -272,7 +323,7 @@ const loadLogs = async () => {
 }
 
 const loadUsers = async () => {
-  if (!currentUser.info?.email) return
+  if (!currentUser.token) return
 
   loading.value = true
   try {
@@ -285,8 +336,10 @@ const loadUsers = async () => {
       throw new Error(result.error || '加载失败')
     }
 
+    canManageSuperAdmins.value = result.can_manage_super_admins === true
     users.value = (result.users || []).map((user) => ({
       ...user,
+      original_role: user.role,
       orange_balance: Number(user.orange_balance || 0)
     }))
   } catch (error) {
@@ -297,23 +350,30 @@ const loadUsers = async () => {
 }
 
 const saveUser = async (user) => {
-  if (!currentUser.info?.email) {
+  if (!currentUser.token) {
     showToast('未登录，无法更新用户信息', 'error')
     return
   }
 
   const protectedUser = isProtectedUser(user)
-  const isSelf = user.email === currentUser.info.email
+  const self = isSelf(user)
 
   if (protectedUser && user.role !== 'admin') {
-    showToast('orange 账号禁止设置为普通用户', 'error')
+    showToast('orange 账号的角色不可修改', 'error')
     user.role = 'admin'
     return
   }
 
-  if (isSelf && user.role !== 'admin') {
+  if (self && !['admin', 'super_admin'].includes(user.role)) {
     showToast('管理员不能将自己设置为普通用户', 'error')
-    user.role = 'admin'
+    user.role = currentUser.info.role
+    return
+  }
+
+  if (user.role !== user.original_role &&
+      (user.role === 'super_admin' || user.original_role === 'super_admin') &&
+      !canManageSuperAdmins.value) {
+    showToast('只有 orange 账号可以授予或撤销超级管理员权限', 'error')
     return
   }
 
@@ -334,9 +394,77 @@ const saveUser = async (user) => {
     }
 
     showToast(result.message || '更新成功', 'success')
+    await loadUsers()
     await loadLogs()
   } catch (error) {
     showToast(error.message || '更新失败', 'error')
+  }
+}
+
+const openBanDialog = (user) => {
+  banTarget.value = user
+  banType.value = 'permanent'
+  banDays.value = ''
+  banReason.value = ''
+}
+
+const closeBanDialog = () => {
+  if (banSaving.value) return
+  banTarget.value = null
+}
+
+const banUser = async () => {
+  if (!banTarget.value) return
+  const reason = banReason.value.trim()
+  if (!reason) return showToast('请填写封禁原因', 'error')
+  let durationDays = null
+  if (banType.value === 'temporary') {
+    durationDays = Number(banDays.value)
+    if (!Number.isSafeInteger(durationDays) || durationDays <= 0) {
+      return showToast('临时封禁天数必须为正整数', 'error')
+    }
+  }
+
+  banSaving.value = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/ban`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser.token}` },
+      body: JSON.stringify({ id: banTarget.value.id, reason, duration_days: durationDays })
+    })
+    const result = await res.json()
+    if (!res.ok) throw new Error(result.error || '封禁失败')
+    showToast(result.message || '账号已封禁', 'success')
+    banTarget.value = null
+    await loadUsers()
+    await loadLogs()
+  } catch (error) {
+    showToast(error.message || '封禁失败', 'error')
+  } finally {
+    banSaving.value = false
+  }
+}
+
+const unbanUser = async (user) => {
+  const confirmed = await new Promise((resolve) => {
+    window.dispatchEvent(new CustomEvent('show-confirm', {
+      detail: { message: `确定解除「${user.username}」的封禁并恢复发帖权限吗？`, resolve }
+    }))
+  })
+  if (!confirmed) return
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/unban`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser.token}` },
+      body: JSON.stringify({ id: user.id })
+    })
+    const result = await res.json()
+    if (!res.ok) throw new Error(result.error || '解封失败')
+    showToast(result.message || '已解除封禁', 'success')
+    await loadUsers()
+    await loadLogs()
+  } catch (error) {
+    showToast(error.message || '解封失败', 'error')
   }
 }
 
@@ -366,6 +494,19 @@ onMounted(() => {
 .user-table td { color: #333; }
 .balance-input, .role-select { width: 120px; padding: 8px 10px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 14px; }
 .role-select { width: 110px; }
+.ban-state { display: block; color: #67c23a; }
+.ban-state.banned { color: #c45656; font-weight: 700; }
+.ban-reason { display: block; margin-top: 5px; color: #606266; max-width: 260px; white-space: normal; }
+.ban-btn, .unban-btn, .cancel-btn { margin-left: 6px; padding: 8px 12px; border: 0; border-radius: 6px; cursor: pointer; }
+.ban-btn { background: #f56c6c; color: #fff; }
+.unban-btn { background: #67c23a; color: #fff; }
+.cancel-btn { background: #f2f3f5; color: #606266; }
+.ban-modal-mask { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, 0.45); }
+.ban-modal { width: min(520px, 100%); padding: 24px; border-radius: 10px; background: #fff; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.2); }
+.ban-modal h3 { margin: 0 0 20px; }
+.ban-modal label { display: block; margin: 14px 0; color: #606266; }
+.ban-control { display: block; box-sizing: border-box; width: 100%; margin-top: 7px; padding: 9px 10px; border: 1px solid #dcdfe6; border-radius: 6px; font: inherit; }
+.ban-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .save-btn { padding: 8px 16px; border: none; border-radius: 6px; background: #ff9900; color: #fff; cursor: pointer; }
 .save-btn:hover { background: #f28b00; }
 .save-btn:disabled { background: #ffc98a; cursor: not-allowed; }

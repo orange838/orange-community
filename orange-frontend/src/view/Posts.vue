@@ -4,7 +4,7 @@
 
     <!-- 发帖表单 -->
     <div class="post-form-card">
-      <template v-if="isLoggedIn">
+      <template v-if="isLoggedIn && !banStatus.is_banned">
         <input
           v-model="form.title"
           type="text"
@@ -32,6 +32,11 @@
           <p><strong>内容：</strong>{{ lastResult.filteredContent }}</p>
         </div>
       </template>
+      <div v-else-if="isLoggedIn && banStatus.is_banned" class="ban-notice">
+        <strong>账号已被封禁并禁言</strong>
+        <p>{{ banStatus.banned_until ? `临时封禁 ${banStatus.duration_days} 天，至 ${formatTime(banStatus.banned_until)}` : '永久封禁' }}</p>
+        <p v-if="banStatus.reason">原因：{{ banStatus.reason }}</p>
+      </div>
       <div v-else class="need-login">
         登录后才能发帖，请先 <a href="#" @click.prevent="goLogin">登录</a>。
       </div>
@@ -54,7 +59,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { currentUser } from '../store'
 
 const API = import.meta.env.VITE_API_URL
@@ -63,6 +68,9 @@ const posts = ref([])
 const submitting = ref(false)
 const hitWords = ref([])
 const lastResult = ref(null)
+const banStatus = ref({ is_banned: false, reason: '', banned_until: null })
+let banStatusTimer = null
+let banStatusErrorShown = false
 
 // 用 token 判断登录（email 可能为空——未绑邮箱的账号也是已登录用户，不能据此判断）
 const isLoggedIn = computed(() => Boolean(currentUser.token))
@@ -70,11 +78,42 @@ const goLogin = () => window.dispatchEvent(new CustomEvent('show-toast', { detai
 
 const toast = (msg, type) => window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
 
+const loadBanStatus = async () => {
+  const token = currentUser.token
+  if (!token) {
+    banStatus.value = { is_banned: false, reason: '', banned_until: null }
+    banStatusErrorShown = false
+    return
+  }
+  try {
+    banStatus.value = { is_banned: false, reason: '', duration_days: null, banned_until: null }
+    const res = await fetch(`${API}/api/user/ban-status`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || '封禁状态查询失败')
+    if (token !== currentUser.token) return
+    banStatus.value = data
+    banStatusErrorShown = false
+  } catch (error) {
+    if (!banStatusErrorShown) toast(error.message || '封禁状态查询失败', 'error')
+    banStatusErrorShown = true
+  }
+}
+
 const formatTime = (t) => {
   if (!t) return ''
   const d = new Date(t)
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (Number.isNaN(d.getTime())) return String(t)
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(d).replace(/\//g, '-')
 }
 
 const loadPosts = async () => {
@@ -89,7 +128,7 @@ const loadPosts = async () => {
 
 const canDelete = (p) =>
   (currentUser.info && (currentUser.info.id === p.user_id || currentUser.info.username === p.username)) ||
-  currentUser.info?.role === 'admin'
+  ['admin', 'super_admin'].includes(currentUser.info?.role)
 
 const confirmDelete = (message) => new Promise((resolve) => {
   window.dispatchEvent(new CustomEvent('show-confirm', { detail: { message, resolve } }))
@@ -144,10 +183,26 @@ const submitPost = async () => {
   }
 }
 
-onMounted(loadPosts)
+watch(() => currentUser.token, loadBanStatus)
+onMounted(() => {
+  loadPosts()
+  loadBanStatus()
+  banStatusTimer = setInterval(loadBanStatus, 30000)
+})
+onBeforeUnmount(() => {
+  if (banStatusTimer) clearInterval(banStatusTimer)
+})
 </script>
 
 <style scoped>
+.ban-notice {
+  padding: 16px;
+  border: 1px solid #f3c5c5;
+  border-radius: 8px;
+  background: #fff6f6;
+  color: #a12626;
+}
+.ban-notice p { margin: 8px 0 0; }
 .post-form-card {
   background: #fff;
   padding: 20px;

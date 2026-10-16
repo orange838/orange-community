@@ -10,7 +10,7 @@
         <li><router-link to="/notice" active-class="active">公告</router-link></li>
         <li><router-link to="/profile" active-class="active">个人信息</router-link></li>
         <li><a href="https://aeb.cslblog.dpdns.org" target="_blank" rel="noopener">AI错题本</a></li>
-        <li v-if="currentUser.info?.role === 'admin'">
+        <li v-if="isAdminRole(currentUser.info?.role)">
           <router-link to="/admin" active-class="active">后台</router-link>
         </li>
       </ul>
@@ -89,6 +89,8 @@ const showLogin = ref(false)
 const isLoginMode = ref(true)
 const toastRef = ref(null) // 获取 Toast 组件实例
 const router = useRouter()
+const isAdminRole = (role) => role === 'admin' || role === 'super_admin'
+let appMounted = false
 // 开站时长：从站点上线那天开始算（要改开站日期就改下面这一行）
 const SITE_LAUNCH = new Date('2026-08-28T00:00:00+08:00')
 const uptimeText = ref('')
@@ -145,6 +147,7 @@ function cancelToErrbook() {
 async function askAuth() {
   if (authAsked.value) return
   authAsked.value = true
+  await checkBanStatus()
   const info = currentUser.info
   if (!info) return
   const ok = await toastRef.value.showConfirm(`是否授权账号「${info.username}」登录 AI 错题本？`)
@@ -175,6 +178,7 @@ let emailReminded = false
 const remindBindEmail = async () => {
   if (emailReminded) return
   if (!currentUser.info || currentUser.info.email) return
+  if (await checkBanStatus()) return
   emailReminded = true
   const go = await toastRef.value?.showConfirm(
     '你的账号还没有绑定邮箱。绑定后可用于找回账号、接收登录验证码。要现在去绑定吗？'
@@ -204,8 +208,70 @@ const fetchUnread = async () => {
 const formatMsgTime = (t) => {
   if (!t) return ''
   const d = new Date(t)
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (Number.isNaN(d.getTime())) return String(t)
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(d).replace(/\//g, '-')
+}
+
+let checkedBanStatusToken = null
+let checkedBanStatus = false
+let pendingBanStatusToken = null
+let pendingBanStatusCheck = null
+const checkBanStatus = async () => {
+  const token = currentUser.token
+  if (!token || !currentUser.info) {
+    checkedBanStatusToken = null
+    checkedBanStatus = false
+    return false
+  }
+  if (checkedBanStatusToken === token) return checkedBanStatus
+  if (pendingBanStatusToken === token && pendingBanStatusCheck) {
+    try {
+      return await pendingBanStatusCheck
+    } catch {
+      return false
+    }
+  }
+
+  pendingBanStatusToken = token
+  pendingBanStatusCheck = (async () => {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/ban-status`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!res.ok) throw new Error('封禁状态查询失败')
+    const data = await res.json()
+    const isBanned = Boolean(data.is_banned)
+    if (isBanned) {
+      const expiry = data.banned_until
+        ? `临时封禁 ${data.duration_days ?? ''} 天，至 ${formatMsgTime(data.banned_until)}`
+        : '永久封禁'
+      const reason = data.reason ? `\n封禁原因：${data.reason}` : ''
+      await toastRef.value?.showAlert(`你的账号已被${expiry}并禁言，目前不能发布帖子。${reason}`, '账号封禁提醒')
+    }
+    checkedBanStatusToken = token
+    checkedBanStatus = isBanned
+    return isBanned
+  })()
+  try {
+    return await pendingBanStatusCheck
+  } catch {
+    window.dispatchEvent(new CustomEvent('show-toast', {
+      detail: { msg: '无法读取账号封禁状态，请刷新页面重试', type: 'error' }
+    }))
+    return false
+  } finally {
+    if (pendingBanStatusToken === token) {
+      pendingBanStatusToken = null
+      pendingBanStatusCheck = null
+    }
+  }
 }
 
 const toggleMsgPanel = async () => {
@@ -239,6 +305,25 @@ watch(currentUser.info, (val) => {
   }
 }, { immediate: true })
 
+watch(() => currentUser.token, (token) => {
+  if (token && appMounted) {
+    checkBanStatus()
+  } else if (!token) {
+    checkedBanStatusToken = null
+    checkedBanStatus = false
+    pendingBanStatusToken = null
+    pendingBanStatusCheck = null
+  }
+})
+
+watch(currentUser.info, (user, previousUser) => {
+  if (user && !previousUser && currentUser.token && appMounted) {
+    checkedBanStatusToken = null
+    checkedBanStatus = false
+    checkBanStatus()
+  }
+})
+
 const openModal = (mode) => {
   isLoginMode.value = mode
   showLogin.value = true
@@ -270,11 +355,13 @@ const handleGlobalConfirm = (event) => {
 }
 
 onMounted(() => {
+  appMounted = true
   window.addEventListener('show-toast', handleGlobalToast)
   window.addEventListener('show-alert', handleGlobalAlert)
   window.addEventListener('show-confirm', handleGlobalConfirm)
   handleSso()
   remindBindEmail()  // Toast 已挂载后再检查一次，处理刷新/已有登录态场景
+  checkBanStatus()
 
   // 通过邀请链接（/?invite=xxx）直接打开时，自动弹出注册弹窗
   // （邀请码预填由 LoginModal 挂载时的 onMounted 读取 URL 完成）

@@ -6,7 +6,9 @@
         <p>当前状态：<span style="color: #ff9900; font-weight: bold;">已登录</span></p>
         <p>用户名：{{ currentUser.info.username }}</p>
         <p>邮箱：{{ currentUser.info.email }}</p>
-        <p v-if="currentUser.info.role === 'admin'">角色：管理员</p>
+        <p v-if="['admin', 'super_admin'].includes(currentUser.info.role)">
+          角色：{{ currentUser.info.role === 'super_admin' ? '超级管理员' : '管理员' }}
+        </p>
         <p>橙子余额：{{ currentUser.info.orange_balance ?? 0 }}</p>
         <p>签到记录：已签到 {{ currentUser.info.sign_in_count ?? 0 }} 次</p>
         <div class="github-bind">

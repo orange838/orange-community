@@ -22,7 +22,11 @@ type User = {
   password: string;
   orange_balance: number;
   last_sign_in_date: string | null;
-  role: "admin" | "user";
+  role: "admin" | "super_admin" | "user";
+  is_banned?: number;
+  ban_reason?: string | null;
+  ban_duration_days?: number | null;
+  banned_until?: string | null;
   github_id?: string | null;
   github_username?: string | null;
   cpoauth_id?: string | null;
@@ -129,6 +133,22 @@ const cors = (response: Response, request: Request) => {
 
 // 签到/日期统一按东八区计算（避免 UTC 日期错位），与本地 backend 对齐
 const todayCN = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+const isAdminRole = (role: string | null | undefined) => role === "admin" || role === "super_admin";
+const isUserBanned = (user: Pick<User, "is_banned" | "banned_until">) => {
+  if (Number(user.is_banned) !== 1) return false;
+  if (!user.banned_until) return true;
+  const expiresAt = Date.parse(user.banned_until);
+  return !Number.isFinite(expiresAt) || expiresAt > Date.now();
+};
+const formatBeijingDateTime = (value: string) => new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false
+}).format(new Date(value)).replace(/\//g, "-");
 
 const encode = (value: string) => new TextEncoder().encode(value);
 
@@ -151,13 +171,15 @@ const getActivityName = (path: string) => ({
   "GET /api/posts": "查看帖子广场",
   "/api/admin/users": "查看用户管理",
   "/api/admin/users/update": "修改用户信息",
+  "/api/admin/users/ban": "封禁用户",
+  "/api/admin/users/unban": "解除用户封禁",
   "/api/admin/logs": "查看操作日志",
   "/api/admin/invites": "管理邀请码",
   "/api/user/messages": "查看系统消息",
   "/api/user/messages/read": "查看系统消息"
 }[path] ?? "访问接口");
 
-const roleLabel = (role: string) => role === "admin" ? "管理员" : "普通用户";
+const roleLabel = (role: string) => role === "super_admin" ? "超级管理员" : role === "admin" ? "管理员" : "普通用户";
 
 const verificationEmailHtml = (type: string, code: string) => `
 <!doctype html>
@@ -417,7 +439,7 @@ async function verifyTurnstile(
 // ============================================================
 async function getUserByEmail(db: D1Database, email: string) {
   return db.prepare(
-    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, github_id, github_username, cpoauth_id, cpoauth_username FROM users WHERE email = ?"
+    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, is_banned, ban_reason, ban_duration_days, banned_until, github_id, github_username, cpoauth_id, cpoauth_username FROM users WHERE email = ?"
   ).bind(email).first<User>();
 }
 
@@ -436,7 +458,7 @@ async function getUserById(db: D1Database, id: number) {
 
 async function getUserByUsername(db: D1Database, username: string) {
   return db.prepare(
-    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, github_id, github_username, cpoauth_id, cpoauth_username FROM users WHERE username = ?"
+    "SELECT id, email, username, password, orange_balance, last_sign_in_date, role, is_banned, ban_reason, ban_duration_days, banned_until, github_id, github_username, cpoauth_id, cpoauth_username FROM users WHERE username = ?"
   ).bind(username).first<User>();
 }
 
@@ -519,6 +541,23 @@ async function recordActivity(
     actionDetail = audit
       ? `修改用户 ${audit.target_username ?? targetId}：橙子数量 ${audit.old_balance} → ${audit.new_balance}，角色 ${roleLabel(audit.old_role)} → ${roleLabel(audit.new_role)}`
       : `提交用户修改：橙子数量 ${String(body.orange_balance ?? "未提供")}，角色 ${roleLabel(String(body.role ?? ""))}`;
+  } else if (url.pathname === "/api/admin/users/ban") {
+    const targetId = Number(body.id);
+    const target = Number.isInteger(targetId)
+      ? await db.prepare("SELECT username FROM users WHERE id = ?").bind(targetId).first<{ username: string }>()
+      : null;
+    const duration = body.duration_days ? `临时封禁 ${String(body.duration_days)} 天` : "永久封禁";
+    actionDetail = response.status === 200
+      ? `封禁用户 ${target?.username ?? targetId}（${duration}）；原因：${String(body.reason ?? "")}`
+      : `尝试封禁用户 ${target?.username ?? targetId}`;
+  } else if (url.pathname === "/api/admin/users/unban") {
+    const targetId = Number(body.id);
+    const target = Number.isInteger(targetId)
+      ? await db.prepare("SELECT username FROM users WHERE id = ?").bind(targetId).first<{ username: string }>()
+      : null;
+    actionDetail = response.status === 200
+      ? `解除用户 ${target?.username ?? targetId} 的封禁`
+      : `尝试解除用户 ${target?.username ?? targetId} 的封禁`;
   } else if (url.pathname === "/api/register/invite") {
     actionDetail = `邀请注册账号 ${String(body.username ?? "新用户")}`;
   } else if (url.pathname === "/api/user/bind-email") {
@@ -1090,12 +1129,12 @@ async function handle(request: Request, env: Env) {
     if (!id) return json({ error: "缺少帖子 id" }, 400);
     const post = await env.DB.prepare("SELECT * FROM posts WHERE id = ?").bind(id).first<Post>();
     if (!post) return json({ error: "帖子不存在" }, 404);
-    if (post.user_id !== user.id && user.role !== "admin") {
+    if (post.user_id !== user.id && !isAdminRole(user.role)) {
       return json({ error: "无权删除该帖子" }, 403);
     }
     await env.DB.prepare("DELETE FROM posts WHERE id = ?").bind(id).run();
     // 管理员删除了别人的帖子：给作者发系统消息（作者自己删 / 管理员删自己 不通知）
-    if (user.role === "admin" && post.user_id !== user.id) {
+    if (isAdminRole(user.role) && post.user_id !== user.id) {
       await env.DB.prepare(
         "INSERT INTO user_messages (user_id, content, is_read, created_at) VALUES (?, ?, 0, ?)"
       ).bind(post.user_id, `管理员删除了你的帖子《${post.title}》`, new Date().toISOString()).run();
@@ -1110,6 +1149,13 @@ async function handle(request: Request, env: Env) {
     if (!auth) return json({ error: "未登录" }, 401);
     const user = await getUserByAuth(env.DB, auth);
     if (!user) return json({ error: "未登录" }, 401);
+    if (isUserBanned(user)) {
+      return json({
+        error: "你的账号已被封禁，暂时不能发帖",
+        reason: user.ban_reason ?? "",
+        banned_until: user.banned_until
+      }, 403);
+    }
     const title = String(body.title ?? "").trim();
     const content = String(body.content ?? "").trim();
     if (!title) return json({ error: "标题不能为空" }, 400);
@@ -1150,6 +1196,19 @@ async function handle(request: Request, env: Env) {
     return json({ messages: rows.results });
   }
 
+  if (url.pathname === "/api/user/ban-status" && request.method === "GET") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const user = await getUserByAuth(env.DB, auth);
+    if (!user) return json({ error: "未登录" }, 401);
+    return json({
+      is_banned: isUserBanned(user),
+      reason: isUserBanned(user) ? user.ban_reason ?? "" : null,
+      duration_days: isUserBanned(user) ? user.ban_duration_days ?? null : null,
+      banned_until: isUserBanned(user) ? user.banned_until : null
+    });
+  }
+
   if (url.pathname === "/api/user/messages/read" && request.method === "POST") {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
@@ -1166,9 +1225,18 @@ async function handle(request: Request, env: Env) {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
     const admin = await getUserByAuth(env.DB, auth);
-    if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
-    const users = await env.DB.prepare("SELECT id, email, username, orange_balance, role FROM users ORDER BY id").all();
-    return json({ users: users.results.map((u) => ({ ...u, is_protected: isProtectedUser({ email: String(u.email), username: String(u.username) }, env) })) });
+    if (!admin || !isAdminRole(admin.role)) return json({ error: "无权限" }, 403);
+    const users = await env.DB.prepare(
+      "SELECT id, email, username, orange_balance, role, is_banned, ban_reason, ban_duration_days, banned_until FROM users ORDER BY id"
+    ).all<User>();
+    return json({
+      can_manage_super_admins: isProtectedUser(admin, env),
+      users: users.results.map((user) => ({
+        ...user,
+        is_banned: isUserBanned(user),
+        is_protected: isProtectedUser({ email: String(user.email), username: String(user.username) }, env)
+      }))
+    });
   }
 
   // -------- admin/users/update（Bearer token + 非负余额 + 保护账号）--------
@@ -1176,15 +1244,26 @@ async function handle(request: Request, env: Env) {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
     const admin = await getUserByAuth(env.DB, auth);
-    if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
+    if (!admin || !isAdminRole(admin.role)) return json({ error: "无权限" }, 403);
 
-    const target = await env.DB.prepare("SELECT id, email, username, orange_balance, role FROM users WHERE id = ?")
+    const target = await env.DB.prepare(
+      "SELECT id, email, username, orange_balance, role, is_banned, banned_until FROM users WHERE id = ?"
+    )
       .bind(Number(body.id)).first<User>();
     if (!target) return json({ error: "用户不存在" }, 404);
     const role = String(body.role ?? "").toLowerCase();
-    if (!["admin", "user"].includes(role)) return json({ error: "角色值无效" }, 400);
-    if ((isProtectedUser(target, env) || target.email === admin.email) && role !== "admin") {
-      return json({ error: isProtectedUser(target, env) ? "orange 账号禁止设置为普通用户" : "管理员不能将自己设置为普通用户" }, 403);
+    if (!["admin", "super_admin", "user"].includes(role)) return json({ error: "角色值无效" }, 400);
+    if (isProtectedUser(target, env) && role !== "admin") {
+      return json({ error: "orange 账号禁止修改角色" }, 403);
+    }
+    if (role === "super_admin" && isUserBanned(target)) {
+      return json({ error: "请先解除该账号的封禁，再授予超级管理员权限" }, 400);
+    }
+    if (target.id === admin.id && role !== target.role) {
+      return json({ error: "管理员不能修改自己的角色" }, 403);
+    }
+    if (role !== target.role && (role === "super_admin" || target.role === "super_admin") && !isProtectedUser(admin, env)) {
+      return json({ error: "只有 orange 账号可以授予或撤销超级管理员权限" }, 403);
     }
     const balance = Number(body.orange_balance);
     if (!Number.isInteger(balance) || balance < 0) return json({ error: "橙子数量必须为非负整数" }, 400);
@@ -1208,8 +1287,8 @@ async function handle(request: Request, env: Env) {
       )
     ]);
     // 给「被修改的用户本人」留一条消息，下次他登录时弹窗告知
-    const oldRoleLabel = (target.role ?? "user") === "admin" ? "管理员" : "普通用户";
-    const newRoleLabel = role === "admin" ? "管理员" : "普通用户";
+    const oldRoleLabel = roleLabel(target.role ?? "user");
+    const newRoleLabel = roleLabel(role);
     await env.DB.prepare(
       "INSERT INTO user_messages (user_id, content, is_read, created_at) VALUES (?, ?, 0, ?)"
     ).bind(
@@ -1220,12 +1299,89 @@ async function handle(request: Request, env: Env) {
     return json({ message: "更新成功", id: target.id, orange_balance: balance, role });
   }
 
+  if (url.pathname === "/api/admin/users/ban" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const admin = await getUserByAuth(env.DB, auth);
+    if (!admin || !isAdminRole(admin.role)) return json({ error: "无权限" }, 403);
+
+    const id = Number(body.id);
+    const reason = String(body.reason ?? "").trim();
+    const rawDuration = body.duration_days;
+    const durationDays = rawDuration === null || rawDuration === undefined || rawDuration === ""
+      ? null
+      : Number(rawDuration);
+    if (!Number.isInteger(id) || id <= 0) return json({ error: "用户编号无效" }, 400);
+    if (!reason) return json({ error: "封禁原因必填" }, 400);
+    if (reason.length > 500) return json({ error: "封禁原因不能超过 500 字" }, 400);
+    if (durationDays !== null && (!Number.isSafeInteger(durationDays) || durationDays <= 0)) {
+      return json({ error: "临时封禁天数必须为正整数" }, 400);
+    }
+
+    const target = await env.DB.prepare(
+      "SELECT id, email, username, role, is_banned, ban_reason, ban_duration_days, banned_until FROM users WHERE id = ?"
+    ).bind(id).first<User>();
+    if (!target) return json({ error: "用户不存在" }, 404);
+    if (target.id === admin.id) return json({ error: "不能封禁自己的账号" }, 403);
+    if (isProtectedUser(target, env)) return json({ error: "orange 账号不能被封禁" }, 403);
+    if (target.role === "super_admin") return json({ error: "超级管理员不能被封禁" }, 403);
+
+    let bannedUntil: string | null = null;
+    if (durationDays !== null) {
+      const expiryTimestamp = Date.now() + durationDays * 24 * 3600_000;
+      if (!Number.isFinite(expiryTimestamp) || !Number.isFinite(new Date(expiryTimestamp).getTime())) {
+        return json({ error: "临时封禁期限超出有效范围" }, 400);
+      }
+      bannedUntil = new Date(expiryTimestamp).toISOString();
+    }
+    const message = bannedUntil
+      ? `你的账号已被临时封禁并禁言 ${durationDays} 天，至 ${formatBeijingDateTime(bannedUntil)}。原因：${reason}`
+      : `你的账号已被永久封禁并禁言。原因：${reason}`;
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE users SET is_banned = 1, ban_reason = ?, ban_duration_days = ?, banned_until = ? WHERE id = ?"
+      ).bind(reason, durationDays, bannedUntil, target.id),
+      env.DB.prepare(
+        "INSERT INTO user_messages (user_id, content, is_read, created_at) VALUES (?, ?, 0, ?)"
+      ).bind(target.id, message, new Date().toISOString())
+    ]);
+    return json({ message: "账号已封禁", is_banned: true, banned_until: bannedUntil });
+  }
+
+  if (url.pathname === "/api/admin/users/unban" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const admin = await getUserByAuth(env.DB, auth);
+    if (!admin || !isAdminRole(admin.role)) return json({ error: "无权限" }, 403);
+
+    const id = Number(body.id);
+    if (!Number.isInteger(id) || id <= 0) return json({ error: "用户编号无效" }, 400);
+    const target = await env.DB.prepare(
+      "SELECT id, email, username, role, is_banned, ban_reason, ban_duration_days, banned_until FROM users WHERE id = ?"
+    ).bind(id).first<User>();
+    if (!target) return json({ error: "用户不存在" }, 404);
+    if (target.id === admin.id) return json({ error: "不能操作自己的封禁状态" }, 403);
+    if (isProtectedUser(target, env)) return json({ error: "orange 账号不能被封禁" }, 403);
+    if (target.role === "super_admin") return json({ error: "超级管理员不能被封禁" }, 403);
+    if (!isUserBanned(target)) return json({ error: "该账号当前未被封禁" }, 400);
+
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE users SET is_banned = 0, ban_reason = NULL, ban_duration_days = NULL, banned_until = NULL WHERE id = ?"
+      ).bind(target.id),
+      env.DB.prepare(
+        "INSERT INTO user_messages (user_id, content, is_read, created_at) VALUES (?, ?, 0, ?)"
+      ).bind(target.id, "你的账号封禁已解除，现已恢复发帖权限。", new Date().toISOString())
+    ]);
+    return json({ message: "已解除账号封禁", is_banned: false });
+  }
+
   // -------- admin/logs（Bearer token + activity_logs）--------
   if (url.pathname === "/api/admin/logs" && request.method === "GET") {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
     const admin = await getUserByAuth(env.DB, auth);
-    if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
+    if (!admin || !isAdminRole(admin.role)) return json({ error: "无权限" }, 403);
     const logs = await env.DB.prepare(
       "SELECT id, actor_email, actor_username, action, action_detail, method, path, status, created_at " +
       "FROM activity_logs ORDER BY id DESC LIMIT 100"
@@ -1238,7 +1394,7 @@ async function handle(request: Request, env: Env) {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
     const admin = await getUserByAuth(env.DB, auth);
-    if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
+    if (!admin || !isAdminRole(admin.role)) return json({ error: "无权限" }, 403);
     const rows = await env.DB.prepare(
       "SELECT ic.id, ic.code, ic.created_by, ic.created_at, ic.expires_at, ic.status, " +
       "ic.used_by, ic.used_at, u.username AS used_by_name " +
@@ -1269,7 +1425,7 @@ async function handle(request: Request, env: Env) {
     const auth = await getAuth(request, env);
     if (!auth) return json({ error: "未登录" }, 401);
     const admin = await getUserByAuth(env.DB, auth);
-    if (!admin || admin.role !== "admin") return json({ error: "无权限" }, 403);
+    if (!admin || !isAdminRole(admin.role)) return json({ error: "无权限" }, 403);
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
     let code = "";
     for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
