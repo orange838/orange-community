@@ -1304,13 +1304,13 @@ async function handle(request: Request, env: Env) {
     if (!target) return json({ error: "用户不存在" }, 404);
     const role = String(body.role ?? "").toLowerCase();
     if (!["admin", "super_admin", "user"].includes(role)) return json({ error: "角色值无效" }, 400);
-    if (isProtectedUser(target, env) && role !== "admin") {
-      return json({ error: "orange 账号禁止修改角色" }, 403);
+    if (isProtectedUser(target, env) && (!isProtectedUser(admin, env) || role !== "super_admin")) {
+      return json({ error: "orange 账号只能由本人设置为超级管理员" }, 403);
     }
     if (role === "super_admin" && isUserBanned(target)) {
       return json({ error: "请先解除该账号的封禁，再授予超级管理员权限" }, 400);
     }
-    if (target.id === admin.id && role !== target.role) {
+    if (target.id === admin.id && role !== target.role && !isProtectedUser(admin, env)) {
       return json({ error: "管理员不能修改自己的角色" }, 403);
     }
     if (role !== target.role && (role === "super_admin" || target.role === "super_admin") && !isProtectedUser(admin, env)) {

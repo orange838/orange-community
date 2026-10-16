@@ -2,22 +2,22 @@
   <Teleport to="body">
     <!-- 普通消息提示 (原来的功能) -->
     <transition name="toast-fade">
-      <div v-if="visible && type === 'message'" class="toast-container top-center">
+      <div v-if="toastVisible" class="toast-container top-center">
         <div class="toast-box" :class="status">
           <span class="toast-icon">{{ icon }}</span>
-          <span class="toast-msg">{{ message }}</span>
+          <span class="toast-msg">{{ toastMessage }}</span>
         </div>
       </div>
     </transition>
 
     <!-- 确认弹窗 (新增功能) -->
     <transition name="modal-fade">
-      <div v-if="visible && (type === 'confirm' || type === 'alert')" class="confirm-overlay">
+      <div v-if="activeDialog" class="confirm-overlay">
         <div class="confirm-box">
-          <h3 class="confirm-title">{{ alertTitle }}</h3>
-          <p class="confirm-content">{{ message }}</p>
+          <h3 class="confirm-title">{{ activeDialog.title }}</h3>
+          <p class="confirm-content">{{ activeDialog.message }}</p>
           <div class="confirm-actions">
-            <button v-if="type === 'confirm'" class="btn-cancel" @click="handleCancel">取消</button>
+            <button v-if="activeDialog.type === 'confirm'" class="btn-cancel" @click="handleCancel">取消</button>
             <button class="btn-confirm" @click="handleConfirm">确认</button>
           </div>
         </div>
@@ -27,14 +27,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 
-const visible = ref(false)
-const message = ref('')
-const type = ref('message') // 'message' | 'confirm' | 'alert'
-const alertTitle = ref('提示')
+const toastVisible = ref(false)
+const toastMessage = ref('')
 const status = ref('success') // 'success' 或 'error'
-let resolvePromise = null // 用来存回调函数
+const activeDialog = ref(null)
+const dialogQueue = []
+let toastTimer = null
 
 // 计算图标
 const icon = computed(() => {
@@ -43,47 +43,37 @@ const icon = computed(() => {
 
 // 1. 普通提示方法 (保持原有逻辑)
 const showToast = (msg, typeStatus = 'success') => {
-  message.value = msg
+  toastMessage.value = msg
   status.value = typeStatus
-  type.value = 'message'
-  visible.value = true
-  setTimeout(() => { visible.value = false }, 2500)
+  toastVisible.value = true
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toastVisible.value = false }, 2500)
 }
 
-// 2. 确认弹窗方法 (新增)
-const showConfirm = (msg) => {
-  message.value = msg
-  type.value = 'confirm'
-  visible.value = true
-  
-  // 返回一个 Promise，方便外部等待用户点击
+// 确认框和提示框依次显示，防止并发提醒互相覆盖。
+const enqueueDialog = (type, msg, title = '提示') => {
   return new Promise((resolve) => {
-    resolvePromise = resolve
+    dialogQueue.push({ type, message: msg, title, resolve })
+    if (!activeDialog.value) activeDialog.value = dialogQueue.shift()
   })
 }
 
-// 3. 仅提示：样式同确认弹窗，但只有一个「确认」按钮，没有取消/关闭入口
-const showAlert = (msg, title = '提示') => {
-  message.value = msg
-  alertTitle.value = title
-  type.value = 'alert'
-  visible.value = true
-  return new Promise((resolve) => {
-    resolvePromise = resolve
-  })
+const showConfirm = (msg) => enqueueDialog('confirm', msg)
+const showAlert = (msg, title = '提示') => enqueueDialog('alert', msg, title)
+
+onBeforeUnmount(() => {
+  if (toastTimer) clearTimeout(toastTimer)
+})
+
+const finishDialog = (result) => {
+  const current = activeDialog.value
+  if (!current) return
+  activeDialog.value = dialogQueue.shift() || null
+  current.resolve(result)
 }
 
-// 点击确定
-const handleConfirm = () => {
-  visible.value = false
-  if (resolvePromise) resolvePromise(true)
-}
-
-// 点击取消
-const handleCancel = () => {
-  visible.value = false
-  if (resolvePromise) resolvePromise(false)
-}
+const handleConfirm = () => finishDialog(true)
+const handleCancel = () => finishDialog(false)
 
 // 暴露给外部使用
 defineExpose({
