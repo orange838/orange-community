@@ -224,6 +224,8 @@ const verificationEmailHtml = (type: string, code: string) => `
 const CODE_TTL_MS = 5 * 60_000;          // 验证码 5 分钟有效
 const SEND_CODE_COOLDOWN_MS = 60_000;    // 同一邮箱 60 秒内仅可发送一次
 const CODE_MAX_ATTEMPTS = 5;             // 验证码最多尝试 5 次
+const WEAK_PASSWORD_REMINDER =
+  "你的密码不符合当前安全规则（至少 8 位，且同时包含大写字母、小写字母和数字）。建议尽快重置密码。此提醒不会限制账号使用。";
 const TOKEN_TTL_HOURS = 24 * 7;          // token 7 天有效
 const GITHUB_REDIRECT_URI = "https://api.cslblog.dpdns.org/api/auth/github/callback";
 const CPOAUTH_REDIRECT_URI = "https://api.cslblog.dpdns.org/api/auth/cpoauth/callback";
@@ -473,18 +475,39 @@ function isProtectedUser(user: { email: string; username: string }, env: Env) {
 }
 
 async function validateCode(db: D1Database, email: string, code: string) {
+  // 错误次数绑定到邮箱最新一条有效验证码，而不是用户提交的验证码文本。
   const row = await db.prepare(
-    "SELECT id, attempts FROM codes WHERE email = ? AND code = ? AND is_used = 0 AND expires_at > ? " +
+    "SELECT id, code, attempts FROM codes WHERE email = ? AND is_used = 0 AND expires_at > ? " +
     "ORDER BY id DESC LIMIT 1"
-  ).bind(email, code, new Date().toISOString()).first<{ id: number; attempts: number }>();
+  ).bind(email, new Date().toISOString()).first<{ id: number; code: string; attempts: number }>();
   if (!row) {
-    await db.prepare(
-      "UPDATE codes SET attempts = attempts + 1 WHERE email = ? AND code = ? AND is_used = 0"
-    ).bind(email, code).run();
     return null;
   }
   if ((row.attempts ?? 0) >= CODE_MAX_ATTEMPTS) return null;
+  if (row.code !== code) {
+    await db.prepare(
+      "UPDATE codes SET attempts = COALESCE(attempts, 0) + 1 " +
+      "WHERE id = ? AND is_used = 0 AND expires_at > ? AND COALESCE(attempts, 0) < ?"
+    ).bind(row.id, new Date().toISOString(), CODE_MAX_ATTEMPTS).run();
+    return null;
+  }
   return row;
+}
+
+function isStrongPassword(password: string) {
+  return password.length >= 8 &&
+    /[A-Z]/.test(password) &&
+    /[a-z]/.test(password) &&
+    /\d/.test(password);
+}
+
+function validateRegistrationInput(username: string, password: string) {
+  if (!username) return "用户名不能为空";
+  if (Array.from(username).length > 20) return "用户名不能超过 20 个字符";
+  if (!isStrongPassword(password)) {
+    return "密码至少 8 位，并同时包含大写字母、小写字母和数字";
+  }
+  return null;
 }
 
 async function recordActivity(
@@ -938,7 +961,9 @@ async function handle(request: Request, env: Env) {
     const code = String(body.code ?? "").trim();
     const newPassword = String(body.new_password ?? "");
     if (!email || !code || !newPassword) return json({ error: "参数不完整" }, 400);
-    if (newPassword.length < 6) return json({ error: "密码至少 6 位" }, 400);
+    if (!isStrongPassword(newPassword)) {
+      return json({ error: "密码至少 8 位，并同时包含大写字母、小写字母和数字" }, 400);
+    }
 
     const user = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email)
       .first<{ id: number }>();
@@ -951,6 +976,8 @@ async function handle(request: Request, env: Env) {
       env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id),
       env.DB.prepare("UPDATE users SET password = ? WHERE id = ?")
         .bind(await hashPassword(newPassword), user.id),
+      env.DB.prepare("UPDATE user_messages SET is_read = 1 WHERE user_id = ? AND content = ? AND is_read = 0")
+        .bind(user.id, WEAK_PASSWORD_REMINDER),
     ]);
     return json({ message: "密码已重置，请使用新密码登录" });
   }
@@ -1016,6 +1043,9 @@ async function handle(request: Request, env: Env) {
     const password = String(body.password ?? "");
     const code = String(body.code ?? "");
     if (!email || !password || !code) return json({ error: "缺参数" }, 400);
+    const normalizedUsername = username.trim();
+    const inputError = validateRegistrationInput(normalizedUsername, password);
+    if (inputError) return json({ error: inputError }, 400);
 
     const validCode = await validateCode(env.DB, email, code);
     if (!validCode) return json({ error: "码不对或过期" }, 400);
@@ -1024,14 +1054,14 @@ async function handle(request: Request, env: Env) {
       await env.DB.batch([
         env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id),
         env.DB.prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)")
-          .bind(email, username, await hashPassword(password))
+          .bind(email, normalizedUsername, await hashPassword(password))
       ]);
     } catch {
       return json({ error: "该邮箱或用户名已注册" }, 400);
     }
-    const token = await createToken(env.SECRET_KEY, email, username, "user");
+    const token = await createToken(env.SECRET_KEY, email, normalizedUsername, "user");
     return json({ message: "注册成功", token, user: {
-      email, username, orange_balance: 0, role: "user"
+      email, username: normalizedUsername, orange_balance: 0, role: "user"
     } }, 201);
   }
 
@@ -1072,12 +1102,33 @@ async function handle(request: Request, env: Env) {
     const user = await getUserByIdentifier(env.DB, account);
     if (!user) return json({ error: "用户不存在" }, 401);
     if (!await verifyPassword(user.password, password)) return json({ error: "密码错误" }, 401);
+    // 仅密码登录能验证存量密码明文；验证码和 OAuth 登录不推断密码强度。
+    const passwordUpdateReminder = !isStrongPassword(password);
+    if (passwordUpdateReminder) {
+      try {
+        await env.DB.prepare(
+          "INSERT INTO user_messages (user_id, content, is_read, created_at) " +
+          "SELECT ?, ?, 0, ? WHERE NOT EXISTS (" +
+          "SELECT 1 FROM user_messages WHERE user_id = ? AND content = ? AND is_read = 0)"
+        ).bind(
+          user.id,
+          WEAK_PASSWORD_REMINDER,
+          new Date().toISOString(),
+          user.id,
+          WEAK_PASSWORD_REMINDER
+        ).run();
+      } catch (e) {
+        // 提醒写入失败不能阻止用户登录；记录错误以便排查消息投递问题。
+        console.error("[密码安全提醒] 写入系统消息失败", e);
+      }
+    }
     const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE user_id = ?")
       .bind(user.id).first<{ count: number }>();
     const token = await createToken(env.SECRET_KEY, user.email, user.username, user.role ?? "user");
     return json({
       message: `欢迎回来，${user.username}！`,
       token,
+      password_update_reminder: passwordUpdateReminder,
       user: {
         email: user.email,
         username: user.username,
@@ -1191,7 +1242,7 @@ async function handle(request: Request, env: Env) {
     if (!me) return json({ error: "未登录" }, 401);
     const rows = await env.DB.prepare(
       "SELECT id, content, created_at FROM user_messages " +
-      "WHERE user_id = ? AND is_read = 0 ORDER BY id LIMIT 10"
+      "WHERE user_id = ? AND is_read = 0 ORDER BY id DESC LIMIT 10"
     ).bind(me.id).all();
     return json({ messages: rows.results });
   }
@@ -1446,10 +1497,12 @@ async function handle(request: Request, env: Env) {
       return json({ error: "人机验证失败，请重试" }, 403);
     }
     const invite = String(body.invite ?? "");
-    const username = String(body.username ?? "");
+    const username = String(body.username ?? "").trim();
     const password = String(body.password ?? "");
     const email = String(body.email ?? "").trim();
     if (!invite || !username || !password) return json({ error: "请填写邀请码、用户名和密码" }, 400);
+    const inputError = validateRegistrationInput(username, password);
+    if (inputError) return json({ error: inputError }, 400);
     const inv = await env.DB.prepare(
       "SELECT id, status, expires_at FROM invite_codes WHERE code = ? LIMIT 1"
     ).bind(invite).first<{ id: number; status: string; expires_at: string | null }>();

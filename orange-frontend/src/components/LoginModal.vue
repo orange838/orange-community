@@ -54,11 +54,12 @@
           </div>
           <div class="form-item">
             <label>用户名</label>
-            <input type="text" placeholder="请输入用户名" v-model="formData.username" />
+            <input type="text" maxlength="20" placeholder="请输入用户名（最多 20 个字符）" v-model="formData.username" />
           </div>
           <div class="form-item">
             <label>密码</label>
-            <input type="password" placeholder="请输入密码" v-model="formData.password" />
+            <input type="password" placeholder="至少 8 位，含大写字母、小写字母和数字" v-model="formData.password" />
+            <p class="password-hint">至少 8 位，并同时包含大写字母、小写字母和数字。</p>
           </div>
           <div class="form-item">
             <label>确认密码</label>
@@ -93,7 +94,8 @@
           </div>
           <div class="form-item">
             <label>新密码</label>
-            <input type="password" placeholder="请输入新密码（至少 6 位）" v-model="formData.password" />
+            <input type="password" placeholder="至少 8 位，含大写字母、小写字母和数字" v-model="formData.password" />
+            <p class="password-hint">至少 8 位，并同时包含大写字母、小写字母和数字。</p>
           </div>
           <div class="form-item">
             <label>确认新密码</label>
@@ -229,6 +231,8 @@ const backToLogin = () => {
 }
 
 const handleClose = () => emit('close')
+const meetsPasswordRule = (password) =>
+  password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password)
 
 const clearTurnstileWidget = () => {
   if (turnstileTimeout) {
@@ -417,6 +421,10 @@ const handleSubmit = async () => {
       showToast('两次输入的密码不一致！', 'error')
       return
     }
+    if (!meetsPasswordRule(formData.password)) {
+      showToast('密码至少 8 位，并同时包含大写字母、小写字母和数字', 'error')
+      return
+    }
     if (!currentTurnstileToken.value) {
       showToast('请完成人机验证！', 'error')
       return
@@ -457,6 +465,15 @@ const handleSubmit = async () => {
   if (!props.isLogin) {
     if (formData.password !== formData.confirmPassword) {
       showToast('两次输入的密码不一致！', 'error')
+      return
+    }
+    if (!meetsPasswordRule(formData.password)) {
+      showToast('密码至少 8 位，并同时包含大写字母、小写字母和数字', 'error')
+      return
+    }
+    const username = formData.username.trim()
+    if (!username || Array.from(username).length > 20) {
+      showToast('用户名不能为空且不能超过 20 个字符', 'error')
       return
     }
     if (hasInvite) {
@@ -539,7 +556,17 @@ const handleSubmit = async () => {
         currentUser.setInfo({ ...result.user, token: result.token })
       }
 
-      setTimeout(() => handleClose(), 1500)
+      setTimeout(() => {
+        handleClose()
+        if (result.password_update_reminder) {
+          window.dispatchEvent(new CustomEvent('show-alert', {
+            detail: {
+              title: '密码安全提醒',
+              msg: '你的密码不符合当前安全规则（至少 8 位，且同时包含大写字母、小写字母和数字）。建议尽快重置密码。此提醒不会限制账号使用。'
+            }
+          }))
+        }
+      }, 1500)
     } else {
       showToast(result.error || '操作失败', 'error')
       // 失败重置 Turnstile
@@ -589,6 +616,7 @@ const handleSubmit = async () => {
 
 .turnstile-item { margin-bottom: 20px; }
 .turnstile-hint { color: #f56c6c; font-size: 12px; margin-top: 5px; }
+.password-hint { color: #909399; font-size: 12px; margin-top: 4px; }
 
 .submit-btn { width: 100%; padding: 12px; background-color: #ff9900; color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; margin-top: 10px; }
 .submit-btn:hover:not(:disabled) { background-color: #e68a00; }
