@@ -5,8 +5,8 @@ interface Env {
   DB: D1Database;
   CF_TURNSTILE_SECRET_KEY: string;
   RESEND_API_KEY: string;
-  PROTECTED_ADMIN_EMAIL: string;
-  PROTECTED_ADMIN_USERNAME: string;
+  ORANGE_PROTECTED_ADMIN_EMAIL: string;
+  ORANGE_PROTECTED_ADMIN_USERNAME: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
   CPOAUTH_CLIENT_ID: string;
@@ -471,7 +471,8 @@ async function getUserByAuth(db: D1Database, auth: { email: string; username: st
 }
 
 function isProtectedUser(user: { email: string; username: string }, env: Env) {
-  return user.email === env.PROTECTED_ADMIN_EMAIL || user.username === env.PROTECTED_ADMIN_USERNAME;
+  return user.email === env.ORANGE_PROTECTED_ADMIN_EMAIL ||
+    user.username === env.ORANGE_PROTECTED_ADMIN_USERNAME;
 }
 
 async function validateCode(db: D1Database, email: string, code: string) {
@@ -1304,13 +1305,13 @@ async function handle(request: Request, env: Env) {
     if (!target) return json({ error: "用户不存在" }, 404);
     const role = String(body.role ?? "").toLowerCase();
     if (!["admin", "super_admin", "user"].includes(role)) return json({ error: "角色值无效" }, 400);
-    if (isProtectedUser(target, env) && (!isProtectedUser(admin, env) || role !== "super_admin")) {
-      return json({ error: "orange 账号只能由本人设置为超级管理员" }, 403);
+    if (isProtectedUser(target, env) && (target.role !== "super_admin" || role !== target.role)) {
+      return json({ error: "orange 账号的超级管理员角色不可修改" }, 403);
     }
     if (role === "super_admin" && isUserBanned(target)) {
       return json({ error: "请先解除该账号的封禁，再授予超级管理员权限" }, 400);
     }
-    if (target.id === admin.id && role !== target.role && !isProtectedUser(admin, env)) {
+    if (target.id === admin.id && role !== target.role) {
       return json({ error: "管理员不能修改自己的角色" }, 403);
     }
     if (role !== target.role && (role === "super_admin" || target.role === "super_admin") && !isProtectedUser(admin, env)) {

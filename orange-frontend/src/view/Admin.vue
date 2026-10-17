@@ -71,11 +71,11 @@
                 <select
                   v-model="user.role"
                   class="role-select"
-                  :disabled="(isProtectedUser(user) && !canManageSuperAdmins) || (user.role === 'super_admin' && !canManageSuperAdmins)"
+                  :disabled="isProtectedUser(user) || (user.role === 'super_admin' && !canManageSuperAdmins)"
                 >
                   <option v-if="!isProtectedUser(user)" value="admin">管理员</option>
                   <option v-if="!isProtectedUser(user)" value="user">普通用户</option>
-                  <option v-if="canManageSuperAdmins || user.role === 'super_admin'" value="super_admin">超级管理员</option>
+                  <option v-if="isProtectedUser(user) || canManageSuperAdmins || user.role === 'super_admin'" value="super_admin">超级管理员</option>
                 </select>
               </td>
               <td>
@@ -358,9 +358,9 @@ const saveUser = async (user) => {
   const protectedUser = isProtectedUser(user)
   const self = isSelf(user)
 
-  if (protectedUser && user.role !== 'super_admin') {
-    showToast('orange 账号应设为超级管理员', 'error')
-    user.role = user.original_role
+  if (protectedUser && user.role !== user.original_role) {
+    showToast('orange 账号的超级管理员角色不可修改', 'error')
+    user.role = 'super_admin'
     return
   }
 

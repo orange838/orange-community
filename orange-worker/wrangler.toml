@@ -12,12 +12,10 @@ binding = "DB"
 database_name = "orange-community"
 database_id = "05800bf1-0e28-4678-9a85-e9d9eec28039"
 
-[vars]
-PROTECTED_ADMIN_EMAIL = "[REDACTED]"
-PROTECTED_ADMIN_USERNAME = "[REDACTED]"
-
-# SECRET_KEY（JWT 签名密钥）为敏感值，请勿写入本文件。
-# 请用 `wrangler secret put SECRET_KEY` 单独配置；本地 .env 的 SECRET_KEY 建议保持一致。
+# 保护账号标识及其他敏感值使用 Worker Secret 配置，不要写入仓库：
+# `wrangler secret put ORANGE_PROTECTED_ADMIN_EMAIL`
+# `wrangler secret put ORANGE_PROTECTED_ADMIN_USERNAME`
+# `wrangler secret put SECRET_KEY`（JWT 签名密钥）
 
 [observability.logs]
 enabled = true
