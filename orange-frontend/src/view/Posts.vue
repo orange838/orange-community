@@ -43,7 +43,15 @@
     </div>
 
     <!-- 帖子列表 -->
-    <div class="post-list" v-if="posts.length">
+    <div v-if="postsLoading && !posts.length" class="post-list loading-list" role="status" aria-label="正在加载帖子">
+      <div v-for="item in 3" :key="item" class="post-skeleton">
+        <div class="skeleton-line skeleton-meta"></div>
+        <div class="skeleton-line skeleton-title"></div>
+        <div class="skeleton-line skeleton-content"></div>
+        <div class="skeleton-line skeleton-content skeleton-content-short"></div>
+      </div>
+    </div>
+    <div class="post-list" v-else-if="posts.length">
       <div class="post-item" v-for="p in posts" :key="p.id">
         <div class="post-head">
           <span class="post-username">{{ p.username }}</span>
@@ -54,6 +62,7 @@
         <p class="post-content">{{ p.content }}</p>
       </div>
     </div>
+    <p class="empty load-error" v-else-if="postsError">{{ postsError }}</p>
     <p class="empty" v-else>还没有帖子，来发第一帖吧～</p>
   </div>
 </template>
@@ -65,6 +74,8 @@ import { currentUser } from '../store'
 const API = import.meta.env.VITE_API_URL
 const form = ref({ title: '', content: '' })
 const posts = ref([])
+const postsLoading = ref(true)
+const postsError = ref('')
 const submitting = ref(false)
 const hitWords = ref([])
 const lastResult = ref(null)
@@ -117,12 +128,17 @@ const formatTime = (t) => {
 }
 
 const loadPosts = async () => {
+  postsLoading.value = true
+  postsError.value = ''
   try {
     const res = await fetch(`${API}/api/posts`)
     const data = await res.json()
+    if (!res.ok) throw new Error(data.error || '帖子加载失败，请稍后重试')
     posts.value = data.posts || []
-  } catch {
-    posts.value = []
+  } catch (error) {
+    postsError.value = error.message || '帖子加载失败，请稍后重试'
+  } finally {
+    postsLoading.value = false
   }
 }
 
@@ -265,6 +281,39 @@ onBeforeUnmount(() => {
 }
 .need-login a { color: #ff9900; }
 .post-list { margin-top: 15px; }
+.post-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  padding: 18px 22px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);
+}
+.skeleton-line {
+  position: relative;
+  overflow: hidden;
+  background: #edf0f4;
+  border-radius: 5px;
+}
+.skeleton-line::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent);
+  animation: skeleton-shimmer 1.35s infinite;
+}
+.skeleton-meta { width: 38%; height: 14px; margin-bottom: 14px; }
+.skeleton-title { width: 62%; height: 18px; margin-bottom: 12px; }
+.skeleton-content { width: 100%; height: 13px; margin-bottom: 8px; }
+.skeleton-content-short { width: 72%; margin-bottom: 0; }
+@keyframes skeleton-shimmer {
+  100% { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line::after { animation: none; }
+}
 .post-item {
   background: #fff;
   padding: 18px 22px;
@@ -288,4 +337,5 @@ onBeforeUnmount(() => {
 .post-title { margin: 8px 0 6px; color: #303133; font-size: 16px; }
 .post-content { margin: 0; color: #606266; font-size: 14px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; }
 .empty { text-align: center; color: #909399; margin-top: 30px; }
+.load-error { color: #c45656; }
 </style>
