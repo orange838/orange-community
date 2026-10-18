@@ -649,11 +649,13 @@ async function probeUrl(url: string) {
 }
 
 async function buildDashboardStatus(env: Env) {
-  const [users, checkins, invites, verifications, apiHealth, ...domainChecks] = await Promise.all([
+  const [users, checkins, invites, verifications, posts, messages, apiHealth, ...domainChecks] = await Promise.all([
     countRows(env, "users"),
     countRows(env, "checkin_records"),
     countRows(env, "invite_codes"),
     countRows(env, "turnstile_verification_logs"),
+    countRows(env, "posts"),
+    countRows(env, "user_messages"),
     probeUrl("https://api.cslblog.dpdns.org/api/health"),
     ...DASHBOARD_DOMAINS.map((domain) => probeUrl(`https://${domain}`))
   ]);
@@ -698,7 +700,7 @@ async function buildDashboardStatus(env: Env) {
     value: domainChecks[index].status === "OK" ? "正常" : domainChecks[index].detail
   }));
   const pagesStatus = domainChecks.every((check) => check.status === "OK") ? "OK" : "WARN";
-  const d1Counts = [users, checkins, invites, verifications];
+  const d1Counts = [users, checkins, invites, verifications, posts, messages];
   const d1Status = d1Counts.every((count) => count !== null) ? "OK" : "WARN";
   const d1Value = (count: number | null) => count === null ? "无法获取" : String(count);
   const turnstileStatus = passed === null || failed === null || verifications === null ? "WARN" : "OK";
@@ -717,7 +719,7 @@ async function buildDashboardStatus(env: Env) {
     resources: [
       { name: "Pages Project", type: "Pages", status: pagesStatus, detail: `orange-community / ${domains}` },
       { name: "Worker API", type: "Worker", status: apiHealth.status, detail: apiHealth.detail },
-      { name: "D1 Database", type: "D1", status: d1Status, detail: d1Status === "OK" ? `8 张表 / ${users} 位用户` : "部分数据库统计无法获取" },
+      { name: "D1 Database", type: "D1", status: d1Status, detail: d1Status === "OK" ? `8 张表 / ${users} 位用户 / ${posts} 条帖子 / ${messages} 条消息` : "部分数据库统计无法获取" },
       { name: "HTTPS", type: "DNS/SSL", status: pagesStatus, detail: domainChecks.map((check, index) => `${DASHBOARD_DOMAINS[index]}：${check.detail}`).join("；") },
       { name: "Account", type: "Cloudflare", status: "OK", detail: "已验证 / 账户已连接" },
       { name: "Git Head", type: "Deploy", status: gitHead === "N/A" ? "WARN" : "OK", detail: gitHead },
@@ -730,7 +732,9 @@ async function buildDashboardStatus(env: Env) {
       { name: "Users", value: d1Value(users) },
       { name: "Check-ins", value: d1Value(checkins) },
       { name: "Invite codes", value: d1Value(invites) },
-      { name: "Turnstile records", value: d1Value(verifications) }
+      { name: "Turnstile records", value: d1Value(verifications) },
+      { name: "Posts", value: d1Value(posts) },
+      { name: "Messages", value: d1Value(messages) }
     ],
     deployments: [
       { name: "Project", value: "orange-community" },
