@@ -11,6 +11,21 @@
         </p>
         <p>橙子余额：{{ currentUser.info.orange_balance ?? 0 }}</p>
         <p>签到记录：已签到 {{ currentUser.info.sign_in_count ?? 0 }} 次</p>
+        <div class="referral-section">
+          <p>拉新邀请码：{{ currentUser.info.referral_code || '尚未创建' }}</p>
+          <p class="referral-hint">邀请链接用于普通邮箱注册并记录邀请关系，当前不含奖励。</p>
+          <button
+            v-if="!currentUser.info.referral_code"
+            class="bind-btn"
+            :disabled="creatingReferralCode"
+            @click="createReferralCode"
+          >{{ creatingReferralCode ? '创建中…' : '创建拉新邀请码' }}</button>
+          <button
+            v-else
+            class="bind-btn"
+            @click="copyReferralLink"
+          >复制拉新链接</button>
+        </div>
         <div class="github-bind">
           <span>GitHub：{{ currentUser.info.github_username ? ('已绑定 @' + currentUser.info.github_username) : '未绑定' }}</span>
           <button v-if="!currentUser.info.github_username" class="bind-btn" @click="bindGithub">绑定 GitHub</button>
@@ -43,7 +58,7 @@
 </template>
 
 <script setup>
-import { onMounted, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { currentUser } from '../store'
 
@@ -73,6 +88,39 @@ onMounted(() => {
 
 const showToast = (msg, type = 'success') => {
   window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
+}
+
+const creatingReferralCode = ref(false)
+
+const createReferralCode = async () => {
+  creatingReferralCode.value = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/referral-code`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+    const result = await res.json()
+    if (!res.ok) {
+      showToast(result.error || '创建拉新邀请码失败', 'error')
+      return
+    }
+    currentUser.setInfo({ ...currentUser.info, referral_code: result.code })
+    showToast('拉新邀请码已创建', 'success')
+  } catch {
+    showToast('网络异常，请稍后再试', 'error')
+  } finally {
+    creatingReferralCode.value = false
+  }
+}
+
+const copyReferralLink = async () => {
+  const link = `${window.location.origin}/?ref=${encodeURIComponent(currentUser.info.referral_code)}`
+  try {
+    await navigator.clipboard.writeText(link)
+    showToast('拉新链接已复制', 'success')
+  } catch {
+    showToast(`请手动复制：${link}`, 'error')
+  }
 }
 
 const bindGithub = async () => {
@@ -147,7 +195,6 @@ const unbindCpoauth = async () => {
   }
 }
 
-import { ref } from 'vue'
 const showEmailBind = ref(false)
 const emailInput = ref('')
 const codeInput = ref('')
@@ -223,6 +270,8 @@ watch(() => currentUser.info?.email, () => {
 }
 
 .github-bind { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.referral-section { margin-top: 16px; }
+.referral-hint { color: #909399; font-size: 13px; margin: 0 0 8px; }
 .email-bind-form { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .email-bind-form input { padding: 6px 10px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 13px; min-width: 160px; }
 .bind-btn { padding: 6px 16px; background-color: #24292e; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }

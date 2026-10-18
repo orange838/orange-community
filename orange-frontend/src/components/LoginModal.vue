@@ -52,6 +52,10 @@
             <label>邮箱</label>
             <input type="email" placeholder="请输入邮箱地址" v-model="formData.email" />
           </div>
+          <div v-if="!formData.invite" class="form-item">
+            <label>拉新邀请码（选填）</label>
+            <input type="text" placeholder="输入邀请人的拉新邀请码" v-model="formData.referralCode" />
+          </div>
           <div class="form-item">
             <label>用户名</label>
             <input type="text" maxlength="20" placeholder="请输入用户名（最多 20 个字符）" v-model="formData.username" />
@@ -155,7 +159,8 @@ const formData = reactive({
   password: '',   // 用于：登录/注册
   confirmPassword: '', // 用于：注册确认
   code: '',       // 用于：验证码
-  invite: ''      // 用于：邀请注册（可选）
+  invite: '',     // 用于：无邮箱邀请注册
+  referralCode: '' // 用于：普通邮箱注册的拉新归因
 })
 
 // 从 URL 读取邀请码（通过邀请链接打开时自动预填）
@@ -163,6 +168,15 @@ const getInviteFromUrl = () => {
   try {
     const params = new URLSearchParams(window.location.search)
     return params.get('invite') || ''
+  } catch {
+    return ''
+  }
+}
+
+const getReferralFromUrl = () => {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('ref') || ''
   } catch {
     return ''
   }
@@ -360,6 +374,12 @@ onMounted(() => {
     formData.invite = invite
     // 通过邀请链接打开：引导到注册模式
     if (props.isLogin) emit('update:isLogin', false)
+  } else {
+    const referralCode = getReferralFromUrl()
+    if (referralCode) {
+      formData.referralCode = referralCode
+      if (props.isLogin) emit('update:isLogin', false)
+    }
   }
   window.addEventListener('keydown', onKeydown)
 })
@@ -539,6 +559,7 @@ const handleSubmit = async () => {
         body.password = formData.password
         body.email = formData.email
         body.code = formData.code
+        body.referral_code = formData.referralCode.trim()
     }
 
     const response = await fetch(url, {

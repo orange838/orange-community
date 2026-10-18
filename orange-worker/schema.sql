@@ -47,6 +47,23 @@ CREATE TABLE IF NOT EXISTS invite_codes (
   status TEXT DEFAULT 'active'
 );
 
+CREATE TABLE IF NOT EXISTS referral_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT UNIQUE NOT NULL,
+  owner_user_id INTEGER NOT NULL UNIQUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS referral_attributions (
+  invitee_user_id INTEGER PRIMARY KEY,
+  inviter_user_id INTEGER NOT NULL,
+  referral_code_id INTEGER NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_attributions_inviter
+  ON referral_attributions(inviter_user_id);
+
 CREATE TABLE IF NOT EXISTS admin_audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   admin_email TEXT NOT NULL,

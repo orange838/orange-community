@@ -363,11 +363,11 @@ onMounted(() => {
   remindBindEmail()  // Toast 已挂载后再检查一次，处理刷新/已有登录态场景
   checkBanStatus()
 
-  // 通过邀请链接（/?invite=xxx）直接打开时，自动弹出注册弹窗
-  // （邀请码预填由 LoginModal 挂载时的 onMounted 读取 URL 完成）
+  // 通过邀请或拉新链接打开时，自动弹出注册弹窗
+  // （链接参数预填由 LoginModal 挂载时的 onMounted 读取 URL 完成）
   if (!currentUser.info) {
     const params = new URLSearchParams(window.location.search)
-    if (params.get('invite')) {
+    if (params.get('invite') || params.get('ref')) {
       openModal(false)
     }
   }

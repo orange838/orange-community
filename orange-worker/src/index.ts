@@ -104,6 +104,33 @@ function ensurePostsTable(db: D1Database) {
   return postsSchemaPromise;
 }
 
+let referralSchemaPromise: Promise<void> | null = null;
+function ensureReferralTables(db: D1Database) {
+  if (!referralSchemaPromise) {
+    referralSchemaPromise = db.exec(
+      "CREATE TABLE IF NOT EXISTS referral_codes (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "code TEXT UNIQUE NOT NULL, " +
+        "owner_user_id INTEGER NOT NULL UNIQUE, " +
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); " +
+      "CREATE TABLE IF NOT EXISTS referral_attributions (" +
+        "invitee_user_id INTEGER PRIMARY KEY, " +
+        "inviter_user_id INTEGER NOT NULL, " +
+        "referral_code_id INTEGER NOT NULL, " +
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); " +
+      "CREATE INDEX IF NOT EXISTS idx_referral_attributions_inviter " +
+        "ON referral_attributions(inviter_user_id);"
+    ).then(() => undefined).catch((e) => { referralSchemaPromise = null; throw e; });
+  }
+  return referralSchemaPromise;
+}
+
+function generateReferralCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return Array.from(bytes, (byte) => chars[byte % chars.length]).join("");
+}
+
 const allowedOrigins = new Set([
   "https://cslblog.dpdns.org",
   "https://www.cslblog.dpdns.org",
@@ -160,6 +187,7 @@ const fromHex = (value: string) =>
 
 const getActivityName = (path: string) => ({
   "/api/profile": "查看个人信息",
+  "/api/user/referral-code": "管理拉新邀请码",
   "/api/send-code": "发送验证码",
   "/api/register": "注册账号",
   "/api/register/invite": "邀请注册",
@@ -543,6 +571,8 @@ async function recordActivity(
     actionDetail = response.status === 200 ? "签到成功，获得 5 个橙子" : "尝试签到";
   } else if (url.pathname === "/api/profile") {
     actionDetail = "查看个人信息和签到数据";
+  } else if (url.pathname === "/api/user/referral-code") {
+    actionDetail = response.status === 201 ? "创建拉新邀请码" : "获取拉新邀请码";
   } else if (url.pathname === "/api/admin/users") {
     actionDetail = "查看用户列表";
   } else if (url.pathname === "/api/admin/logs") {
@@ -770,6 +800,10 @@ async function handle(request: Request, env: Env) {
     if (!auth) return json({ error: "未登录" }, 401);
     const user = await getUserByAuth(env.DB, auth);
     if (!user) return json({ error: "用户不存在" }, 404);
+    await ensureReferralTables(env.DB);
+    const referral = await env.DB.prepare(
+      "SELECT code FROM referral_codes WHERE owner_user_id = ?"
+    ).bind(user.id).first<{ code: string }>();
     const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE user_id = ?")
       .bind(user.id).first<{ count: number }>();
     return json({
@@ -782,8 +816,34 @@ async function handle(request: Request, env: Env) {
       has_checked_in_today: user.last_sign_in_date === todayCN(),
       role: user.role ?? "user",
       github_username: user.github_username ?? null,
-      cpoauth_username: user.cpoauth_username ?? null
+      cpoauth_username: user.cpoauth_username ?? null,
+      referral_code: referral?.code ?? null
     });
+  }
+
+  if (url.pathname === "/api/user/referral-code" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const user = await getUserByAuth(env.DB, auth);
+    if (!user) return json({ error: "用户不存在" }, 404);
+    await ensureReferralTables(env.DB);
+
+    let referral = await env.DB.prepare(
+      "SELECT code FROM referral_codes WHERE owner_user_id = ?"
+    ).bind(user.id).first<{ code: string }>();
+    let created = false;
+    if (!referral) {
+      const result = await env.DB.prepare(
+        "INSERT INTO referral_codes (code, owner_user_id) VALUES (?, ?) " +
+        "ON CONFLICT(owner_user_id) DO NOTHING"
+      ).bind(generateReferralCode(), user.id).run();
+      created = result.meta.changes > 0;
+      referral = await env.DB.prepare(
+        "SELECT code FROM referral_codes WHERE owner_user_id = ?"
+      ).bind(user.id).first<{ code: string }>();
+    }
+    if (!referral) return json({ error: "邀请码创建失败，请重试" }, 500);
+    return json({ code: referral.code }, created ? 201 : 200);
   }
 
   // -------- GitHub OAuth --------
@@ -1047,6 +1107,7 @@ async function handle(request: Request, env: Env) {
     const username = String(body.username ?? "");
     const password = String(body.password ?? "");
     const code = String(body.code ?? "");
+    const referralCode = String(body.referral_code ?? "").trim();
     if (!email || !password || !code) return json({ error: "缺参数" }, 400);
     const normalizedUsername = username.trim();
     const inputError = validateRegistrationInput(normalizedUsername, password);
@@ -1055,14 +1116,38 @@ async function handle(request: Request, env: Env) {
     const validCode = await validateCode(env.DB, email, code);
     if (!validCode) return json({ error: "码不对或过期" }, 400);
 
+    let referral: { id: number; owner_user_id: number; owner_email: string | null } | null = null;
+    if (referralCode) {
+      await ensureReferralTables(env.DB);
+      referral = await env.DB.prepare(
+        "SELECT rc.id, rc.owner_user_id, u.email AS owner_email " +
+        "FROM referral_codes rc JOIN users u ON u.id = rc.owner_user_id " +
+        "WHERE rc.code = ?"
+      ).bind(referralCode).first<{ id: number; owner_user_id: number; owner_email: string | null }>();
+      if (!referral) return json({ error: "拉新邀请码无效" }, 400);
+      if (referral.owner_email?.toLowerCase() === email.toLowerCase()) {
+        return json({ error: "不能使用自己的拉新邀请码注册" }, 400);
+      }
+    }
+
     try {
-      await env.DB.batch([
+      const statements = [
         env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id),
         env.DB.prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)")
           .bind(email, normalizedUsername, await hashPassword(password))
-      ]);
-    } catch {
-      return json({ error: "该邮箱或用户名已注册" }, 400);
+      ];
+      if (referral) {
+        statements.push(env.DB.prepare(
+          "INSERT INTO referral_attributions (invitee_user_id, inviter_user_id, referral_code_id) " +
+          "SELECT id, ?, ? FROM users WHERE email = ?"
+        ).bind(referral.owner_user_id, referral.id, email));
+      }
+      await env.DB.batch(statements);
+    } catch (error) {
+      if (error instanceof Error && /UNIQUE constraint failed: users\.email/.test(error.message)) {
+        return json({ error: "该邮箱或用户名已注册" }, 400);
+      }
+      throw error;
     }
     const token = await createToken(env.SECRET_KEY, email, normalizedUsername, "user");
     return json({ message: "注册成功", token, user: {
