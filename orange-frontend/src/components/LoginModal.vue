@@ -48,7 +48,7 @@
         <!-- ========== 注册模式 ========== -->
         <template v-else-if="!isLogin && !resetMode">
           <div v-if="formData.invite" class="invite-tip">
-            已填写管理员提供的免邮箱注册邀请码。拉新邀请码为选填项，两者用途不同。
+            管理员邀请码用于免邮箱注册；拉新邀请码用于记录邀请来源，选填且用途不同。
           </div>
           <div v-if="!formData.invite" class="form-item">
             <label>邮箱</label>
@@ -59,10 +59,14 @@
             <input
               type="text"
               autocomplete="off"
-              maxlength="12"
-              placeholder="输入 6 位拉新码；旧链接中的邀请码也可用"
+              maxlength="6"
+              placeholder="请输入 6 位字母和数字混合的邀请码"
               v-model="formData.referralCode"
             />
+            <p class="referral-help">拉新邀请码为选填项，用于记录邀请来源，不影响注册。</p>
+            <p v-if="referralCodeStatus" class="referral-validation" :class="`referral-validation-${referralCodeStatus}`">
+              {{ referralCodeStatusText }}
+            </p>
           </div>
           <div class="form-item">
             <label>用户名</label>
@@ -155,7 +159,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { currentUser } from '../store' 
 
 const props = defineProps({ isLogin: { type: Boolean, default: true } })
@@ -194,6 +198,16 @@ const getReferralFromUrl = () => {
 
 const countdown = ref(0)
 const loading = ref(false)
+const referralCodeStatus = ref('')
+const referralCodeStatusText = computed(() => ({
+  checking: '正在验证邀请码…',
+  valid: '邀请码有效',
+  invalid: '邀请码无效或已失效',
+  invalid_format: '邀请码必须为 6 位，且同时包含字母和数字',
+  error: '暂时无法验证邀请码，提交注册时会再次校验'
+}[referralCodeStatus.value] || ''))
+let referralValidationTimer = null
+let referralValidationRequest = 0
 
 const githubLogin = () => {
   window.location.href = `${import.meta.env.VITE_API_URL}/api/auth/github?mode=login`
@@ -204,6 +218,37 @@ const cpoauthLogin = () => {
 }
 const loginMethod = ref('password') 
 let timer = null
+
+watch(() => formData.referralCode, (value) => {
+  if (referralValidationTimer) clearTimeout(referralValidationTimer)
+  const requestId = ++referralValidationRequest
+  const code = value.trim()
+  if (!code) {
+    referralCodeStatus.value = ''
+    return
+  }
+  if (!/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{6}$/.test(code)) {
+    referralCodeStatus.value = 'invalid_format'
+    return
+  }
+
+  referralCodeStatus.value = 'checking'
+  referralValidationTimer = setTimeout(async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/referral-code/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ referral_code: code })
+      })
+      const result = await response.json()
+      if (requestId !== referralValidationRequest) return
+      if (!response.ok) throw new Error(result.error || '邀请码验证失败')
+      referralCodeStatus.value = result.valid ? 'valid' : 'invalid'
+    } catch {
+      if (requestId === referralValidationRequest) referralCodeStatus.value = 'error'
+    }
+  }, 300)
+})
 
 // --- Turnstile 相关状态 ---
 const turnstileContainerLogin = ref(null)
@@ -228,6 +273,7 @@ const showToast = (msg, type = 'success') => {
 const switchMode = (toLogin) => {
   // 切换时清空表单，防止数据残留
   Object.assign(formData, { email: '', account: '', username: '', password: '', confirmPassword: '', code: '', invite: getInviteFromUrl() })
+  formData.referralCode = ''
   currentTurnstileToken.value = ''
   turnstileError.value = ''
   loginMethod.value = 'password' 
@@ -239,6 +285,7 @@ const switchMode = (toLogin) => {
 
 const goReset = () => {
   Object.assign(formData, { email: '', account: '', username: '', password: '', confirmPassword: '', code: '' })
+  formData.referralCode = ''
   currentTurnstileToken.value = ''
   turnstileError.value = ''
   resetMode.value = true
@@ -248,6 +295,7 @@ const goReset = () => {
 const backToLogin = () => {
   resetMode.value = false
   Object.assign(formData, { email: '', account: '', username: '', password: '', confirmPassword: '', code: '' })
+  formData.referralCode = ''
   currentTurnstileToken.value = ''
   turnstileError.value = ''
   clearTurnstileWidget()
@@ -392,6 +440,8 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
 })
 onBeforeUnmount(() => {
+  if (referralValidationTimer) clearTimeout(referralValidationTimer)
+  referralValidationRequest++
   clearTurnstileWidget()
   window.removeEventListener('keydown', onKeydown)
 })
@@ -627,6 +677,13 @@ const handleSubmit = async () => {
 .form-item label { display: block; margin-bottom: 8px; color: #606266; font-size: 14px; }
 .form-item input { width: 100%; padding: 10px; border: 1px solid #dcdfe6; border-radius: 4px; box-sizing: border-box; outline: none; }
 .form-item input:focus { border-color: #ff9900; }
+.referral-validation { margin: 6px 0 0; font-size: 12px; }
+.referral-validation-checking { color: #909399; }
+.referral-validation-valid { color: #67c23a; }
+.referral-validation-invalid,
+.referral-validation-invalid_format,
+.referral-validation-error { color: #f56c6c; }
+.referral-help { margin: 6px 0 0; color: #909399; font-size: 12px; }
 .invite-tip { margin-bottom: 20px; padding: 10px 12px; background: #f0f9eb; color: #67c23a; border-radius: 4px; font-size: 13px; }
 .reset-tip { margin-bottom: 20px; padding: 10px 12px; background: #fff7e6; color: #b26a00; border-radius: 4px; font-size: 13px; }
 .forgot-link { text-align: right; margin: -8px 0 16px; }

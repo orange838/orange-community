@@ -902,6 +902,14 @@ async function handle(request: Request, env: Env) {
     }
   }
 
+  if (url.pathname === "/api/referral-code/validate" && request.method === "POST") {
+    const referralCode = String(body.referral_code ?? "").trim();
+    if (!isValidReferralCode(referralCode)) return json({ valid: false });
+    await ensureReferralTables(env.DB);
+    const referral = await findReferralByCode(env.DB, referralCode);
+    return json({ valid: Boolean(referral) });
+  }
+
   // -------- GitHub OAuth --------
   if (url.pathname === "/api/auth/github" && request.method === "GET") {
     if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) {
