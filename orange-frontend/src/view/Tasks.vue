@@ -19,68 +19,63 @@
       >推广任务</button>
     </nav>
 
-    <section v-if="activeCategory" class="task-category-content">
-      <nav class="task-options" aria-label="具体任务">
-        <button
-          v-if="activeCategory === 'daily'"
-          type="button"
-          class="task-option"
-          :class="{ active: activeTask === 'checkin' }"
-          :aria-pressed="activeTask === 'checkin'"
-          @click="activeTask = 'checkin'"
-        >每日签到</button>
-        <button
-          v-else
-          type="button"
-          class="task-option"
-          :class="{ active: activeTask === 'referral' }"
-          :aria-pressed="activeTask === 'referral'"
-          @click="activeTask = 'referral'"
-        >拉新邀请码</button>
-      </nav>
-
-      <section class="tasks-content">
-        <template v-if="activeTask === 'checkin'">
-          <h3>📅 每日签到</h3>
-          <div class="task-card">
-            <p>
-              今日签到状态：
-              <span :class="['checkin-state', { complete: isCheckedIn }]">
-                {{ isCheckedIn ? '已签到' : '未签到' }}
-              </span>
-            </p>
-            <button
-              class="task-btn"
-              :disabled="!hasEmailAccount || isCheckedIn || checkinLoading"
-              @click="handleCheckIn"
-            >
-              {{ checkinLoading ? '签到中...' : isCheckedIn ? '已签到' : '点击签到' }}
-            </button>
-          </div>
-        </template>
-
-        <template v-else-if="activeTask === 'referral'">
-          <h3>📨 拉新邀请码</h3>
-          <div class="task-card">
-            <p>分享专属邀请链接，邀请新用户使用邮箱注册。</p>
-            <p class="referral-note">目前只记录邀请关系，暂不发放奖励或其他权益。</p>
-            <p v-if="referralLoading" class="referral-note">正在为你准备专属邀请码…</p>
-            <div v-else-if="referralCode" class="referral-code-row">
-              <span>我的邀请码</span>
-              <code>{{ referralCode }}</code>
-              <button class="task-btn" @click="copyReferralLink">复制拉新链接</button>
-            </div>
-            <button
-              v-else-if="isAuthenticated"
-              class="task-btn"
-              :disabled="referralLoading"
-              @click="ensureReferralCode"
-            >重试加载邀请码</button>
-            <p v-if="!isAuthenticated" class="referral-note">请先登录，系统会自动为你准备拉新邀请码。</p>
-          </div>
-        </template>
-        <div v-else class="task-card task-prompt">请选择此类别下的具体任务。</div>
-      </section>
+    <section class="task-list-wrap">
+      <table class="task-list">
+        <thead>
+          <tr>
+            <th class="task-icon-column">图标</th>
+            <th>任务名称</th>
+            <th>任务描述</th>
+            <th>奖励</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody v-if="activeCategory === 'daily'">
+          <tr>
+            <td class="task-icon-cell"><span class="task-icon checkin-icon">📅</span></td>
+            <td class="task-name">
+              每日签到
+              <span v-if="isCheckedIn" class="task-status">已签到</span>
+            </td>
+            <td>每天签到获得 5 橙子币。</td>
+            <td class="task-reward">+5 / 天</td>
+            <td>
+              <button
+                class="task-btn"
+                :disabled="!hasEmailAccount || isCheckedIn || checkinLoading"
+                @click="handleCheckIn"
+              >{{ checkinLoading ? '签到中…' : isCheckedIn ? '已签到' : '签到' }}</button>
+            </td>
+          </tr>
+        </tbody>
+        <tbody v-else>
+          <tr>
+            <td class="task-icon-cell"><span class="task-icon referral-icon">🔗</span></td>
+            <td class="task-name">拉新邀请码</td>
+            <td>
+              分享专属链接邀请新用户邮箱注册；目前只记录邀请关系，暂无奖励。
+              <p v-if="referralLoading" class="referral-note">正在为你准备专属邀请码…</p>
+              <code v-else-if="referralCode" class="referral-code">{{ referralCode }}</code>
+              <p v-else-if="!isAuthenticated" class="referral-note">请先登录，系统会自动为你准备邀请码。</p>
+            </td>
+            <td class="task-reward">暂无</td>
+            <td>
+              <button
+                v-if="referralCode"
+                class="task-btn"
+                @click="copyReferralLink"
+              >复制链接</button>
+              <button
+                v-else-if="isAuthenticated"
+                class="task-btn"
+                :disabled="referralLoading"
+                @click="ensureReferralCode"
+              >重试</button>
+              <span v-else class="task-action-muted">登录后可用</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </section>
   </div>
 </template>
@@ -90,7 +85,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { currentUser } from '../store'
 
 const activeCategory = ref('daily')
-const activeTask = ref(null)
 const checkinLoading = ref(false)
 const isCheckedIn = ref(false)
 const referralLoading = ref(false)
@@ -100,7 +94,6 @@ const hasEmailAccount = computed(() => Boolean(currentUser.info?.email))
 
 const selectCategory = (category) => {
   activeCategory.value = category
-  activeTask.value = null
 }
 
 const showToast = (msg, type = 'success') => {
@@ -208,8 +201,7 @@ watch(() => currentUser.token, fetchProfile)
 </script>
 
 <style scoped>
-.task-categories,
-.task-options {
+.task-categories {
   display: flex;
   gap: 8px;
   overflow-x: auto;
@@ -217,8 +209,7 @@ watch(() => currentUser.token, fetchProfile)
 }
 
 .task-categories { margin-top: 16px; }
-.task-category,
-.task-option {
+.task-category {
   flex: 0 0 auto;
   padding: 12px 18px;
   border: 0;
@@ -229,46 +220,84 @@ watch(() => currentUser.token, fetchProfile)
   white-space: nowrap;
 }
 .task-category { font-size: 16px; font-weight: 600; }
-.task-option { padding: 10px 14px; font-size: 14px; }
-.task-category:hover,
-.task-option:hover { color: #e68a00; }
-.task-category.active,
-.task-option.active { border-bottom-color: #ff9900; color: #d97900; }
+.task-category:hover { color: #e68a00; }
+.task-category.active { border-bottom-color: #ff9900; color: #d97900; }
 
-.task-category-content { margin-top: 12px; }
-.task-options { border-bottom-color: #f2f3f5; }
-
-.tasks-content { min-width: 0; margin-top: 14px; }
-.tasks-content h3 { margin: 2px 0 14px; color: #303133; font-size: 19px; }
-.task-card {
-  padding: 26px;
+.task-list-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-  color: #606266;
 }
-.checkin-state { color: #ff9900; font-weight: 700; }
-.checkin-state.complete { color: #52c41a; }
+.task-list {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  color: #606266;
+  font-size: 14px;
+}
+.task-list th,
+.task-list td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #ebeef5;
+  text-align: left;
+  vertical-align: middle;
+}
+.task-list th { background: #f7f8fa; color: #606266; font-weight: 600; }
+.task-list tbody tr:last-child td { border-bottom: 0; }
+.task-icon-column { width: 64px; }
+.task-icon-cell { width: 64px; }
+.task-icon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 20px;
+}
+.checkin-icon { background: #fff2d8; }
+.referral-icon { background: #f0eaff; }
+.task-name { min-width: 150px; color: #303133; font-weight: 600; }
+.task-status {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 7px;
+  border-radius: 12px;
+  background: #e8f7ef;
+  color: #31a56b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.task-reward { min-width: 90px; color: #d97900; font-weight: 600; white-space: nowrap; }
+.referral-code {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #f5f7fa;
+  color: #303133;
+}
 .task-btn {
-  margin-top: 16px;
-  padding: 10px 22px;
+  padding: 8px 14px;
   border: 0;
   border-radius: 4px;
   background: #ff9900;
   color: #fff;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 14px;
+  white-space: nowrap;
 }
 .task-btn:hover:not(:disabled) { background: #e68a00; }
 .task-btn:disabled { background: #dcdfe6; cursor: not-allowed; }
 .referral-note { margin: 8px 0; color: #909399; font-size: 13px; }
-.referral-code-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
-.referral-code-row code { padding: 6px 10px; border-radius: 4px; background: #f5f7fa; color: #303133; }
-.referral-code-row .task-btn { margin-top: 0; }
-.task-prompt { color: #909399; }
+.task-action-muted { color: #909399; white-space: nowrap; }
 
 @media (max-width: 700px) {
   .task-category { padding: 11px 14px; }
-  .task-card { padding: 20px; }
+  .task-list { min-width: 640px; }
+  .task-list th,
+  .task-list td { padding: 12px 10px; }
 }
 </style>
