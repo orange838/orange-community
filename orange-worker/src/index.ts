@@ -780,16 +780,16 @@ async function probeUrl(url: string) {
 }
 
 async function buildDashboardStatus(env: Env) {
-  const [users, checkins, invites, verifications, posts, messages, apiHealth, ...domainChecks] = await Promise.all([
+  const [users, checkins, invites, verifications, posts, messages, ...domainChecks] = await Promise.all([
     countRows(env, "users"),
     countRows(env, "checkin_records"),
     countRows(env, "invite_codes"),
     countRows(env, "turnstile_verification_logs"),
     countRows(env, "posts"),
     countRows(env, "user_messages"),
-    probeUrl("https://api.cslblog.dpdns.org/api/health"),
     ...DASHBOARD_DOMAINS.map((domain) => probeUrl(`https://${domain}`))
   ]);
+  const apiHealth = { status: "OK", detail: "监控 API 正常响应" };
 
   let passed: number | null = null;
   let failed: number | null = null;
@@ -843,7 +843,7 @@ async function buildDashboardStatus(env: Env) {
       worker: { status: apiHealth.status, route: "api.cslblog.dpdns.org/api/status" },
       d1: { status: d1Status, databaseName: "orange-community" },
       https: { status: pagesStatus, domains: domains },
-      api: { status: apiHealth.status, endpoint: "https://api.cslblog.dpdns.org/api/health" },
+      api: { status: apiHealth.status, endpoint: "https://api.cslblog.dpdns.org/api/status" },
       deploy: { status: gitHead === "N/A" ? "WARN" : "OK", branch: "main" },
       turnstile: { status: turnstileStatus, passRate }
     },
