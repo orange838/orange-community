@@ -811,18 +811,42 @@ async function buildDashboardStatus(env: Env) {
       ? "暂无数据"
       : `${Math.round(((passed ?? 0) / total) * 100)}%`;
 
-  // 部署版本号直接问 GitHub（公开仓库，无需令牌）
+  // 先查 GitHub API；不可用时回退到公开提交 Atom feed。
   let gitHead = "N/A";
+  let gitHeadError = "无法获取 Git 提交号";
   try {
     const res = await fetch("https://api.github.com/repos/orange838/orange-community/commits/main", {
-      headers: { "User-Agent": "orange-community-monitor" }
+      headers: {
+        "User-Agent": "orange-community-monitor",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      signal: AbortSignal.timeout(5000)
     });
-    if (res.ok) {
-      const data = await res.json() as { sha?: string };
-      gitHead = String(data.sha ?? "").slice(0, 7) || "N/A";
+    if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
+    const data = await res.json() as { sha?: string };
+    gitHead = String(data.sha ?? "").slice(0, 7);
+    if (!gitHead) throw new Error("GitHub API 响应中没有提交 SHA");
+  } catch (error) {
+    gitHeadError = error instanceof Error ? error.message : String(error);
+    console.error("Dashboard GitHub API commit lookup failed:", error);
+    try {
+      const res = await fetch("https://github.com/orange838/orange-community/commits/main.atom", {
+        headers: {
+          "User-Agent": "orange-community-monitor",
+          "Accept": "application/atom+xml"
+        },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!res.ok) throw new Error(`GitHub Atom feed HTTP ${res.status}`);
+      const feed = await res.text();
+      const match = feed.match(/<id>tag:github\.com,2008:Grit::Commit\/([0-9a-f]{40})<\/id>/i);
+      if (!match) throw new Error("GitHub Atom feed 中没有提交 SHA");
+      gitHead = match[1].slice(0, 7);
+    } catch (fallbackError) {
+      gitHeadError += `；Atom 备用源失败：${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`;
+      console.error("Dashboard GitHub Atom feed commit lookup failed:", fallbackError);
     }
-  } catch {
-    // 拿不到就显示 N/A
   }
 
   const domains = DASHBOARD_DOMAINS.join(", ");
@@ -853,7 +877,7 @@ async function buildDashboardStatus(env: Env) {
       { name: "D1 Database", type: "D1", status: d1Status, detail: d1Status === "OK" ? `8 张表 / ${users} 位用户 / ${posts} 条帖子 / ${messages} 条消息` : "部分数据库统计无法获取" },
       { name: "HTTPS", type: "DNS/SSL", status: pagesStatus, detail: domainChecks.map((check, index) => `${DASHBOARD_DOMAINS[index]}：${check.detail}`).join("；") },
       { name: "Account", type: "Cloudflare", status: "OK", detail: "已验证 / 账户已连接" },
-      { name: "Git Head", type: "Deploy", status: gitHead === "N/A" ? "WARN" : "OK", detail: gitHead },
+      { name: "Git Head", type: "Deploy", status: gitHead === "N/A" ? "WARN" : "OK", detail: gitHead === "N/A" ? gitHeadError : gitHead },
       { name: "Turnstile", type: "Security", status: turnstileStatus, detail: passed === null || failed === null ? "最近 24 小时统计无法获取" : `${passed} passed / ${failed} failed (24h)` }
     ],
     domains: pageDomains,
@@ -870,7 +894,7 @@ async function buildDashboardStatus(env: Env) {
     deployments: [
       { name: "Project", value: "orange-community" },
       { name: "Branch", value: "main" },
-      { name: "Git head", value: gitHead }
+      { name: "Git head", value: gitHead === "N/A" ? gitHeadError : gitHead }
     ],
     turnstile: [
       { name: "Passed", value: d1Value(passed) },
