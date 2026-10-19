@@ -60,7 +60,7 @@
               type="text"
               autocomplete="off"
               maxlength="6"
-              placeholder="请输入 6 位字母和数字混合的邀请码"
+              placeholder="输入好友分享的邀请码"
               v-model="formData.referralCode"
             />
             <p class="referral-help">拉新邀请码为选填项，用于记录邀请来源，不影响注册。</p>
