@@ -17,7 +17,7 @@
           class="content-input"
           rows="5"
           maxlength="5000"
-          placeholder="写点什么…（内容会自动做敏感词过滤）"
+          placeholder="写点什么…"
         ></textarea>
         <div class="form-actions">
           <span class="hit-hint" v-if="hitWords.length">已过滤：{{ hitWords.join('、') }}</span>
