@@ -329,6 +329,8 @@ const openModal = (mode) => {
   showLogin.value = true
 }
 
+const handleOpenLoginModal = () => openModal(true)
+
 const handleGlobalToast = (event) => {
   const { msg, type = 'success' } = event.detail || {}
   if (msg && toastRef.value?.showToast) {
@@ -356,6 +358,7 @@ const handleGlobalConfirm = (event) => {
 
 onMounted(() => {
   appMounted = true
+  window.addEventListener('open-login-modal', handleOpenLoginModal)
   window.addEventListener('show-toast', handleGlobalToast)
   window.addEventListener('show-alert', handleGlobalAlert)
   window.addEventListener('show-confirm', handleGlobalConfirm)
@@ -374,6 +377,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('open-login-modal', handleOpenLoginModal)
   window.removeEventListener('show-toast', handleGlobalToast)
   window.removeEventListener('show-alert', handleGlobalAlert)
   window.removeEventListener('show-confirm', handleGlobalConfirm)
