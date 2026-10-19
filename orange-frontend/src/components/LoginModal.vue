@@ -6,7 +6,7 @@
       <form class="login-form" @submit.prevent="handleSubmit">
         
         <!-- ========== 登录模式：Tab 切换 ========== -->
-        <template v-if="isLogin">
+        <template v-if="isLogin && !resetMode">
           <div class="login-tabs">
             <button type="button" :class="{ active: loginMethod === 'password' }" @click="loginMethod = 'password'">密码登录</button>
             <button type="button" :class="{ active: loginMethod === 'code' }" @click="loginMethod = 'code'">验证码登录</button>
@@ -46,15 +46,23 @@
         </template>
 
         <!-- ========== 注册模式 ========== -->
-        <template v-else>
-          <div v-if="formData.invite" class="invite-tip">已通过邀请链接注册，无需邮箱，填写用户名和密码即可。</div>
+        <template v-else-if="!isLogin && !resetMode">
+          <div v-if="formData.invite" class="invite-tip">
+            已填写管理员提供的免邮箱注册邀请码。拉新邀请码为选填项，两者用途不同。
+          </div>
           <div v-if="!formData.invite" class="form-item">
             <label>邮箱</label>
             <input type="email" placeholder="请输入邮箱地址" v-model="formData.email" />
           </div>
-          <div v-if="!formData.invite" class="form-item">
+          <div class="form-item">
             <label>拉新邀请码（选填）</label>
-            <input type="text" placeholder="输入邀请人的拉新邀请码" v-model="formData.referralCode" />
+            <input
+              type="text"
+              autocomplete="off"
+              maxlength="12"
+              placeholder="输入 6 位拉新码；旧链接中的邀请码也可用"
+              v-model="formData.referralCode"
+            />
           </div>
           <div class="form-item">
             <label>用户名</label>
@@ -82,7 +90,9 @@
 
         <!-- ========== 重置密码模式 ========== -->
         <template v-if="resetMode">
-          <p class="reset-tip">请输入注册邮箱，通过邮箱验证码重置密码。</p>
+          <p class="reset-tip">
+            请输入已绑定的邮箱，通过验证码重置密码。免邮箱注册的账号需先登录并绑定邮箱。
+          </p>
           <div class="form-item">
             <label>邮箱</label>
             <input type="email" placeholder="请输入注册邮箱" v-model="formData.email" />
@@ -370,16 +380,14 @@ const onKeydown = (e) => {
 onMounted(() => {
   renderTurnstile()
   const invite = getInviteFromUrl()
+  const referralCode = getReferralFromUrl()
+  if (referralCode) formData.referralCode = referralCode
   if (invite) {
     formData.invite = invite
     // 通过邀请链接打开：引导到注册模式
     if (props.isLogin) emit('update:isLogin', false)
-  } else {
-    const referralCode = getReferralFromUrl()
-    if (referralCode) {
-      formData.referralCode = referralCode
-      if (props.isLogin) emit('update:isLogin', false)
-    }
+  } else if (referralCode && props.isLogin) {
+    emit('update:isLogin', false)
   }
   window.addEventListener('keydown', onKeydown)
 })

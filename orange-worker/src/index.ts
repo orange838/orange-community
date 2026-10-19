@@ -113,6 +113,9 @@ function ensureReferralTables(db: D1Database) {
         "code TEXT UNIQUE NOT NULL, " +
         "owner_user_id INTEGER NOT NULL UNIQUE, " +
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); " +
+      "CREATE TABLE IF NOT EXISTS referral_code_aliases (" +
+        "code TEXT PRIMARY KEY, " +
+        "referral_code_id INTEGER NOT NULL); " +
       "CREATE TABLE IF NOT EXISTS referral_attributions (" +
         "invitee_user_id INTEGER PRIMARY KEY, " +
         "inviter_user_id INTEGER NOT NULL, " +
@@ -127,8 +130,76 @@ function ensureReferralTables(db: D1Database) {
 
 function generateReferralCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(12));
-  return Array.from(bytes, (byte) => chars[byte % chars.length]).join("");
+  const limit = Math.floor(256 / chars.length) * chars.length;
+  const values = new Uint8Array(6);
+  while (true) {
+    let code = "";
+    while (code.length < 6) {
+      crypto.getRandomValues(values);
+      for (const value of values) {
+        if (value < limit) code += chars[value % chars.length];
+        if (code.length === 6) break;
+      }
+    }
+    if (/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{6}$/.test(code)) return code;
+  }
+}
+
+function isValidReferralCode(code: string) {
+  return code.length === 6 && /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{6}$/.test(code);
+}
+
+async function getOrCreateReferralCode(db: D1Database, ownerUserId: number) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const existing = await db.prepare(
+      "SELECT id, code FROM referral_codes WHERE owner_user_id = ?"
+    ).bind(ownerUserId).first<{ id: number; code: string }>();
+    if (existing && isValidReferralCode(existing.code)) return existing;
+
+    const code = generateReferralCode();
+    try {
+      if (existing) {
+        await db.batch([
+          db.prepare(
+            "INSERT OR IGNORE INTO referral_code_aliases (code, referral_code_id) VALUES (?, ?)"
+          ).bind(existing.code, existing.id),
+          db.prepare("UPDATE referral_codes SET code = ? WHERE owner_user_id = ?")
+            .bind(code, ownerUserId)
+        ]);
+      } else {
+        await db.prepare(
+          "INSERT INTO referral_codes (code, owner_user_id) VALUES (?, ?) " +
+          "ON CONFLICT(owner_user_id) DO NOTHING"
+        ).bind(code, ownerUserId).run();
+      }
+    } catch (error) {
+      if (error instanceof Error && /UNIQUE constraint failed: referral_codes\.code/.test(error.message)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  const referral = await db.prepare(
+    "SELECT id, code FROM referral_codes WHERE owner_user_id = ?"
+  ).bind(ownerUserId).first<{ id: number; code: string }>();
+  if (referral && isValidReferralCode(referral.code)) return referral;
+  throw new Error("无法生成唯一的六位字母数字拉新邀请码");
+}
+
+async function findReferralByCode(db: D1Database, code: string) {
+  return db.prepare(
+    "SELECT rc.id, rc.owner_user_id, u.email AS owner_email, u.username AS owner_username " +
+    "FROM referral_codes rc JOIN users u ON u.id = rc.owner_user_id " +
+    "WHERE rc.code = ? OR rc.id = (" +
+      "SELECT referral_code_id FROM referral_code_aliases WHERE code = ? LIMIT 1" +
+    ") LIMIT 1"
+  ).bind(code, code).first<{
+    id: number;
+    owner_user_id: number;
+    owner_email: string | null;
+    owner_username: string;
+  }>();
 }
 
 const allowedOrigins = new Set([
@@ -828,22 +899,16 @@ async function handle(request: Request, env: Env) {
     if (!user) return json({ error: "用户不存在" }, 404);
     await ensureReferralTables(env.DB);
 
-    let referral = await env.DB.prepare(
+    const hadCode = await env.DB.prepare(
       "SELECT code FROM referral_codes WHERE owner_user_id = ?"
     ).bind(user.id).first<{ code: string }>();
-    let created = false;
-    if (!referral) {
-      const result = await env.DB.prepare(
-        "INSERT INTO referral_codes (code, owner_user_id) VALUES (?, ?) " +
-        "ON CONFLICT(owner_user_id) DO NOTHING"
-      ).bind(generateReferralCode(), user.id).run();
-      created = result.meta.changes > 0;
-      referral = await env.DB.prepare(
-        "SELECT code FROM referral_codes WHERE owner_user_id = ?"
-      ).bind(user.id).first<{ code: string }>();
+    try {
+      const referral = await getOrCreateReferralCode(env.DB, user.id);
+      return json({ code: referral.code }, hadCode?.code === referral.code ? 200 : 201);
+    } catch (error) {
+      console.error("Failed to create six-digit referral code", error);
+      return json({ error: "邀请码创建失败，请稍后重试" }, 500);
     }
-    if (!referral) return json({ error: "邀请码创建失败，请重试" }, 500);
-    return json({ code: referral.code }, created ? 201 : 200);
   }
 
   // -------- GitHub OAuth --------
@@ -1116,16 +1181,15 @@ async function handle(request: Request, env: Env) {
     const validCode = await validateCode(env.DB, email, code);
     if (!validCode) return json({ error: "码不对或过期" }, 400);
 
-    let referral: { id: number; owner_user_id: number; owner_email: string | null } | null = null;
+    let referral: Awaited<ReturnType<typeof findReferralByCode>> = null;
     if (referralCode) {
       await ensureReferralTables(env.DB);
-      referral = await env.DB.prepare(
-        "SELECT rc.id, rc.owner_user_id, u.email AS owner_email " +
-        "FROM referral_codes rc JOIN users u ON u.id = rc.owner_user_id " +
-        "WHERE rc.code = ?"
-      ).bind(referralCode).first<{ id: number; owner_user_id: number; owner_email: string | null }>();
+      referral = await findReferralByCode(env.DB, referralCode);
       if (!referral) return json({ error: "拉新邀请码无效" }, 400);
-      if (referral.owner_email?.toLowerCase() === email.toLowerCase()) {
+      if (
+        referral.owner_email?.toLowerCase() === email.toLowerCase() ||
+        referral.owner_username.toLowerCase() === normalizedUsername.toLowerCase()
+      ) {
         return json({ error: "不能使用自己的拉新邀请码注册" }, 400);
       }
     }
@@ -1590,6 +1654,7 @@ async function handle(request: Request, env: Env) {
     const username = String(body.username ?? "").trim();
     const password = String(body.password ?? "");
     const email = String(body.email ?? "").trim();
+    const referralCode = String(body.referral_code ?? "").trim();
     if (!invite || !username || !password) return json({ error: "请填写邀请码、用户名和密码" }, 400);
     const inputError = validateRegistrationInput(username, password);
     if (inputError) return json({ error: inputError }, 400);
@@ -1607,9 +1672,29 @@ async function handle(request: Request, env: Env) {
     if (email && await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first()) {
       return json({ error: "该邮箱已被绑定" }, 400);
     }
-    await env.DB.prepare(
-      "INSERT INTO users (email, username, password) VALUES (?, ?, ?)"
-    ).bind(email || null, username, await hashPassword(password)).run();
+    let referral: Awaited<ReturnType<typeof findReferralByCode>> = null;
+    if (referralCode) {
+      await ensureReferralTables(env.DB);
+      referral = await findReferralByCode(env.DB, referralCode);
+      if (!referral) return json({ error: "拉新邀请码无效" }, 400);
+      if (
+        referral.owner_username.toLowerCase() === username.toLowerCase() ||
+        (email && referral.owner_email?.toLowerCase() === email.toLowerCase())
+      ) {
+        return json({ error: "不能使用自己的拉新邀请码注册" }, 400);
+      }
+    }
+    const statements = [
+      env.DB.prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)")
+        .bind(email || null, username, await hashPassword(password))
+    ];
+    if (referral) {
+      statements.push(env.DB.prepare(
+        "INSERT INTO referral_attributions (invitee_user_id, inviter_user_id, referral_code_id) " +
+        "SELECT id, ?, ? FROM users WHERE username = ? AND email IS ? ORDER BY id DESC LIMIT 1"
+      ).bind(referral.owner_user_id, referral.id, username, email || null));
+    }
+    await env.DB.batch(statements);
     const newUser = await getUserByUsername(env.DB, username);
     if (!newUser) return json({ error: "注册失败，请重试" }, 500);
     await env.DB.prepare(

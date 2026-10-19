@@ -1,11 +1,17 @@
 <template>
   <div class="page-container">
-    <h2>👤 个人信息</h2>
-    <div class="profile-card">
+    <h2>👤 个人中心</h2>
+    <nav class="profile-tabs" aria-label="个人中心分类">
+      <button type="button" :class="{ active: activeTab === 'overview' }" :aria-pressed="activeTab === 'overview'" @click="activeTab = 'overview'">个人信息</button>
+      <button type="button" :class="{ active: activeTab === 'promotion' }" :aria-pressed="activeTab === 'promotion'" @click="activeTab = 'promotion'">推广中心</button>
+    </nav>
+
+    <section v-if="activeTab === 'overview'">
+      <div class="profile-card">
       <template v-if="currentUser.info">
         <p>当前状态：<span style="color: #ff9900; font-weight: bold;">已登录</span></p>
         <p>用户名：{{ currentUser.info.username }}</p>
-        <p>邮箱：{{ currentUser.info.email }}</p>
+        <p>邮箱：{{ currentUser.info.email || '未绑定' }}</p>
         <p v-if="['admin', 'super_admin'].includes(currentUser.info.role)">
           角色：{{ currentUser.info.role === 'super_admin' ? '超级管理员' : '管理员' }}
         </p>
@@ -38,20 +44,49 @@
           请先点击右上角【登录】按钮，登录后查看您的橙子余额和签到记录。
         </p>
       </template>
-    </div>
+      </div>
+    </section>
+
+    <section v-else class="promotion-card">
+      <h3>🔗 我的邀请链接</h3>
+      <p class="promotion-description">分享专属链接邀请新用户注册。目前仅记录邀请关系，暂无奖励。</p>
+      <div v-if="currentUser.info" class="promotion-link">
+        <code v-if="referralCode">{{ referralLink }}</code>
+        <span v-else>{{ profileLoading || referralLoading ? '正在为你准备专属邀请链接…' : '邀请链接暂不可用，请稍后重试。' }}</span>
+        <button type="button" class="bind-btn" :disabled="!referralCode || referralLoading" @click="copyReferralLink">复制链接</button>
+      </div>
+      <p v-else class="promotion-description">请先登录，系统会自动为你准备专属邀请链接。</p>
+      <button
+        v-if="currentUser.info && !referralCode && !profileLoading && !referralLoading"
+        type="button"
+        class="bind-btn"
+        @click="ensureReferralCode"
+      >重试</button>
+      <p v-if="referralCode" class="promotion-code">你的拉新邀请码：<code>{{ referralCode }}</code></p>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { currentUser } from '../store'
 
 const route = useRoute()
+const activeTab = ref('overview')
+const referralCode = ref('')
+const referralLoading = ref(false)
+const profileLoading = ref(false)
+const referralLink = computed(() => `${window.location.origin}/?ref=${encodeURIComponent(referralCode.value)}`)
+const isMixedReferralCode = (code) => code.length === 6 && /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{6}$/.test(code)
 
 const loadProfile = async () => {
-  if (!currentUser.info?.username) return
+  if (!currentUser.info?.username) {
+    referralCode.value = ''
+    return
+  }
 
+  profileLoading.value = true
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile`, {
       headers: { Authorization: `Bearer ${currentUser.token}` }
@@ -59,20 +94,61 @@ const loadProfile = async () => {
     const result = await res.json()
     if (res.ok) {
       currentUser.setInfo({ ...currentUser.info, ...result })
+      referralCode.value = result.referral_code || ''
+      if (!isMixedReferralCode(referralCode.value)) await ensureReferralCode()
+    } else {
+      showToast(result.error || '加载个人信息失败', 'error')
     }
   } catch {
-    // ignore profile fetch errors and retain the logged-in shell state
+    showToast('加载个人信息失败，请稍后重试', 'error')
+  } finally {
+    profileLoading.value = false
   }
 }
 
 onMounted(() => {
   loadProfile()
   // 从“未绑定邮箱”提醒跳转过来时，自动展开绑定表单
-  if (route.query.bind === '1') showEmailBind.value = true
+  if (route.query.bind === '1') {
+    activeTab.value = 'overview'
+    showEmailBind.value = true
+  }
 })
 
 const showToast = (msg, type = 'success') => {
   window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
+}
+
+const ensureReferralCode = async () => {
+  if (isMixedReferralCode(referralCode.value) || referralLoading.value || !currentUser.token) return
+  referralLoading.value = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/referral-code`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+    const result = await res.json()
+    if (!res.ok) {
+      showToast(result.error || '创建拉新邀请码失败', 'error')
+      return
+    }
+    referralCode.value = result.code
+    currentUser.setInfo({ ...currentUser.info, referral_code: result.code })
+  } catch {
+    showToast('网络异常，请稍后再试', 'error')
+  } finally {
+    referralLoading.value = false
+  }
+}
+
+const copyReferralLink = async () => {
+  if (!referralCode.value) return
+  try {
+    await navigator.clipboard.writeText(referralLink.value)
+    showToast('推广链接已复制', 'success')
+  } catch {
+    showToast(`请手动复制：${referralLink.value}`, 'error')
+  }
 }
 
 const bindGithub = async () => {
@@ -205,12 +281,36 @@ const confirmBindEmail = async () => {
   }
 }
 
-watch(() => currentUser.info?.email, () => {
+watch(() => [currentUser.info?.username, currentUser.info?.email], () => {
   loadProfile()
 })
 </script>
 
 <style scoped>
+.profile-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  overflow-x: auto;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.profile-tabs button {
+  flex: 0 0 auto;
+  padding: 12px 18px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #606266;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.profile-tabs button:hover { color: #e68a00; }
+.profile-tabs button.active { border-bottom-color: #ff9900; color: #d97900; }
+
 .profile-card {
   background: #fff;
   padding: 30px;
@@ -221,6 +321,30 @@ watch(() => currentUser.info?.email, () => {
   line-height: 1.8;
 }
 
+.promotion-card {
+  margin-top: 15px;
+  padding: 24px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);
+  color: #606266;
+}
+
+.promotion-card h3 { margin: 0; color: #303133; }
+.promotion-description { margin: 8px 0 14px; color: #909399; }
+.promotion-link { display: flex; align-items: center; gap: 10px; }
+.promotion-link code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f5f7fa;
+  color: #303133;
+}
+.promotion-code { margin: 14px 0 0; }
+.promotion-code code { padding: 3px 7px; border-radius: 4px; background: #f5f7fa; color: #303133; }
+
 .github-bind { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .email-bind-form { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .email-bind-form input { padding: 6px 10px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 13px; min-width: 160px; }
@@ -228,4 +352,8 @@ watch(() => currentUser.info?.email, () => {
 .bind-btn:hover { background-color: #000; }
 .unbind-btn { padding: 6px 16px; background-color: #fff; color: #f56c6c; border: 1px solid #f56c6c; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .unbind-btn:hover { background-color: #fef0f0; }
+
+@media (max-width: 600px) {
+  .promotion-link { align-items: stretch; flex-direction: column; }
+}
 </style>
