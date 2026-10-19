@@ -54,11 +54,6 @@ CREATE TABLE IF NOT EXISTS referral_codes (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS referral_code_aliases (
-  code TEXT PRIMARY KEY,
-  referral_code_id INTEGER NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS referral_attributions (
   invitee_user_id INTEGER PRIMARY KEY,
   inviter_user_id INTEGER NOT NULL,

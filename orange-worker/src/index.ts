@@ -113,16 +113,14 @@ function ensureReferralTables(db: D1Database) {
         "code TEXT UNIQUE NOT NULL, " +
         "owner_user_id INTEGER NOT NULL UNIQUE, " +
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); " +
-      "CREATE TABLE IF NOT EXISTS referral_code_aliases (" +
-        "code TEXT PRIMARY KEY, " +
-        "referral_code_id INTEGER NOT NULL); " +
       "CREATE TABLE IF NOT EXISTS referral_attributions (" +
         "invitee_user_id INTEGER PRIMARY KEY, " +
         "inviter_user_id INTEGER NOT NULL, " +
         "referral_code_id INTEGER NOT NULL, " +
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); " +
       "CREATE INDEX IF NOT EXISTS idx_referral_attributions_inviter " +
-        "ON referral_attributions(inviter_user_id);"
+        "ON referral_attributions(inviter_user_id); " +
+      "DROP TABLE IF EXISTS referral_code_aliases;"
     ).then(() => undefined).catch((e) => { referralSchemaPromise = null; throw e; });
   }
   return referralSchemaPromise;
@@ -159,13 +157,8 @@ async function getOrCreateReferralCode(db: D1Database, ownerUserId: number) {
     const code = generateReferralCode();
     try {
       if (existing) {
-        await db.batch([
-          db.prepare(
-            "INSERT OR IGNORE INTO referral_code_aliases (code, referral_code_id) VALUES (?, ?)"
-          ).bind(existing.code, existing.id),
-          db.prepare("UPDATE referral_codes SET code = ? WHERE owner_user_id = ?")
-            .bind(code, ownerUserId)
-        ]);
+        await db.prepare("UPDATE referral_codes SET code = ? WHERE owner_user_id = ?")
+          .bind(code, ownerUserId).run();
       } else {
         await db.prepare(
           "INSERT INTO referral_codes (code, owner_user_id) VALUES (?, ?) " +
@@ -191,10 +184,8 @@ async function findReferralByCode(db: D1Database, code: string) {
   return db.prepare(
     "SELECT rc.id, rc.owner_user_id, u.email AS owner_email, u.username AS owner_username " +
     "FROM referral_codes rc JOIN users u ON u.id = rc.owner_user_id " +
-    "WHERE rc.code = ? OR rc.id = (" +
-      "SELECT referral_code_id FROM referral_code_aliases WHERE code = ? LIMIT 1" +
-    ") LIMIT 1"
-  ).bind(code, code).first<{
+    "WHERE rc.code = ? LIMIT 1"
+  ).bind(code).first<{
     id: number;
     owner_user_id: number;
     owner_email: string | null;
