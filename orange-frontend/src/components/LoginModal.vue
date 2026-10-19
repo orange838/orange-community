@@ -63,7 +63,6 @@
               placeholder="输入好友分享的邀请码"
               v-model="formData.referralCode"
             />
-            <p class="referral-help">拉新邀请码为选填项，用于记录邀请来源，不影响注册。</p>
             <p v-if="referralCodeStatus" class="referral-validation" :class="`referral-validation-${referralCodeStatus}`">
               {{ referralCodeStatusText }}
             </p>
@@ -683,7 +682,6 @@ const handleSubmit = async () => {
 .referral-validation-invalid,
 .referral-validation-invalid_format,
 .referral-validation-error { color: #f56c6c; }
-.referral-help { margin: 6px 0 0; color: #909399; font-size: 12px; }
 .invite-tip { margin-bottom: 20px; padding: 10px 12px; background: #f0f9eb; color: #67c23a; border-radius: 4px; font-size: 13px; }
 .reset-tip { margin-bottom: 20px; padding: 10px 12px; background: #fff7e6; color: #b26a00; border-radius: 4px; font-size: 13px; }
 .forgot-link { text-align: right; margin: -8px 0 16px; }
