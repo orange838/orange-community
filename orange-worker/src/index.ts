@@ -120,6 +120,25 @@ function ensureReferralTables(db: D1Database) {
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); " +
       "CREATE INDEX IF NOT EXISTS idx_referral_attributions_inviter " +
         "ON referral_attributions(inviter_user_id); " +
+      "CREATE TABLE IF NOT EXISTS referral_rewards (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "invitee_user_id INTEGER NOT NULL, " +
+        "inviter_user_id INTEGER NOT NULL, " +
+        "reward_type TEXT NOT NULL, " +
+        "reward_date TEXT NOT NULL DEFAULT '', " +
+        "amount INTEGER NOT NULL, " +
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+        "UNIQUE(invitee_user_id, reward_type, reward_date)); " +
+      "CREATE INDEX IF NOT EXISTS idx_referral_rewards_inviter " +
+        "ON referral_rewards(inviter_user_id); " +
+      "CREATE TRIGGER IF NOT EXISTS apply_referral_reward " +
+        "AFTER INSERT ON referral_rewards BEGIN " +
+        "UPDATE users SET orange_balance = COALESCE(orange_balance, 0) + NEW.amount " +
+        "WHERE id = NEW.inviter_user_id; END; " +
+      "INSERT OR IGNORE INTO referral_rewards " +
+        "(invitee_user_id, inviter_user_id, reward_type, reward_date, amount) " +
+        "SELECT invitee_user_id, inviter_user_id, 'registration', '', 10 " +
+        "FROM referral_attributions; " +
       "DROP TABLE IF EXISTS referral_code_aliases;"
     ).then(() => undefined).catch((e) => { referralSchemaPromise = null; throw e; });
   }
@@ -1204,6 +1223,13 @@ async function handle(request: Request, env: Env) {
           "INSERT INTO referral_attributions (invitee_user_id, inviter_user_id, referral_code_id) " +
           "SELECT id, ?, ? FROM users WHERE email = ?"
         ).bind(referral.owner_user_id, referral.id, email));
+        statements.push(env.DB.prepare(
+          "INSERT OR IGNORE INTO referral_rewards " +
+          "(invitee_user_id, inviter_user_id, reward_type, reward_date, amount) " +
+          "SELECT invitee_user_id, inviter_user_id, 'registration', '', 10 " +
+          "FROM referral_attributions WHERE invitee_user_id = " +
+          "(SELECT id FROM users WHERE email = ? ORDER BY id DESC LIMIT 1)"
+        ).bind(email));
       }
       await env.DB.batch(statements);
     } catch (error) {
@@ -1302,10 +1328,17 @@ async function handle(request: Request, env: Env) {
     if (user.last_sign_in_date === date) {
       return json({ error: "今日已签到", orange_balance: user.orange_balance ?? 0 }, 409);
     }
+    await ensureReferralTables(env.DB);
     const balance = Number(user.orange_balance ?? 0) + 5;
     await env.DB.batch([
       env.DB.prepare("INSERT INTO checkin_records (user_id, checkin_date, points) VALUES (?, ?, 5)").bind(user.id, date),
-      env.DB.prepare("UPDATE users SET orange_balance = ?, last_sign_in_date = ? WHERE id = ?").bind(balance, date, user.id)
+      env.DB.prepare("UPDATE users SET orange_balance = ?, last_sign_in_date = ? WHERE id = ?").bind(balance, date, user.id),
+      env.DB.prepare(
+        "INSERT OR IGNORE INTO referral_rewards " +
+        "(invitee_user_id, inviter_user_id, reward_type, reward_date, amount) " +
+        "SELECT invitee_user_id, inviter_user_id, 'daily_checkin', ?, 2 " +
+        "FROM referral_attributions WHERE invitee_user_id = ?"
+      ).bind(date, user.id)
     ]);
     const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE user_id = ?")
       .bind(user.id).first<{ count: number }>();
@@ -1692,6 +1725,13 @@ async function handle(request: Request, env: Env) {
         "INSERT INTO referral_attributions (invitee_user_id, inviter_user_id, referral_code_id) " +
         "SELECT id, ?, ? FROM users WHERE username = ? AND email IS ? ORDER BY id DESC LIMIT 1"
       ).bind(referral.owner_user_id, referral.id, username, email || null));
+      statements.push(env.DB.prepare(
+        "INSERT OR IGNORE INTO referral_rewards " +
+        "(invitee_user_id, inviter_user_id, reward_type, reward_date, amount) " +
+        "SELECT invitee_user_id, inviter_user_id, 'registration', '', 10 " +
+        "FROM referral_attributions WHERE invitee_user_id = " +
+        "(SELECT id FROM users WHERE username = ? AND email IS ? ORDER BY id DESC LIMIT 1)"
+      ).bind(username, email || null));
     }
     await env.DB.batch(statements);
     const newUser = await getUserByUsername(env.DB, username);

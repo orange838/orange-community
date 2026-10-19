@@ -64,6 +64,33 @@ CREATE TABLE IF NOT EXISTS referral_attributions (
 CREATE INDEX IF NOT EXISTS idx_referral_attributions_inviter
   ON referral_attributions(inviter_user_id);
 
+CREATE TABLE IF NOT EXISTS referral_rewards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invitee_user_id INTEGER NOT NULL,
+  inviter_user_id INTEGER NOT NULL,
+  reward_type TEXT NOT NULL,
+  reward_date TEXT NOT NULL DEFAULT '',
+  amount INTEGER NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(invitee_user_id, reward_type, reward_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_rewards_inviter
+  ON referral_rewards(inviter_user_id);
+
+CREATE TRIGGER IF NOT EXISTS apply_referral_reward
+AFTER INSERT ON referral_rewards
+BEGIN
+  UPDATE users
+  SET orange_balance = COALESCE(orange_balance, 0) + NEW.amount
+  WHERE id = NEW.inviter_user_id;
+END;
+
+INSERT OR IGNORE INTO referral_rewards
+  (invitee_user_id, inviter_user_id, reward_type, reward_date, amount)
+SELECT invitee_user_id, inviter_user_id, 'registration', '', 10
+FROM referral_attributions;
+
 CREATE TABLE IF NOT EXISTS admin_audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   admin_email TEXT NOT NULL,

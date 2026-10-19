@@ -49,7 +49,7 @@
 
     <section v-else class="promotion-card">
       <h3>🔗 我的邀请链接</h3>
-      <p class="promotion-description">分享专属链接邀请新用户注册。目前仅记录邀请关系，暂无奖励。</p>
+      <p class="promotion-description">好友使用你的邀请码注册，你获得 10 橙子币；好友每日签到，你再获得 2 橙子币。</p>
       <div v-if="currentUser.info" class="promotion-link">
         <code v-if="referralCode">{{ referralLink }}</code>
         <span v-else>{{ profileLoading || referralLoading ? '正在为你准备专属邀请链接…' : '邀请链接暂不可用，请稍后重试。' }}</span>
