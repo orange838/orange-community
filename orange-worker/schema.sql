@@ -64,6 +64,19 @@ CREATE TABLE IF NOT EXISTS referral_attributions (
 CREATE INDEX IF NOT EXISTS idx_referral_attributions_inviter
   ON referral_attributions(inviter_user_id);
 
+CREATE TABLE IF NOT EXISTS orange_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  amount INTEGER NOT NULL,
+  balance_after INTEGER,
+  transaction_type TEXT NOT NULL,
+  description TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_orange_transactions_user
+  ON orange_transactions(user_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS referral_rewards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   invitee_user_id INTEGER NOT NULL,
@@ -83,6 +96,18 @@ AFTER INSERT ON referral_rewards
 BEGIN
   UPDATE users
   SET orange_balance = COALESCE(orange_balance, 0) + NEW.amount
+  WHERE id = NEW.inviter_user_id;
+  INSERT INTO orange_transactions
+    (user_id, amount, balance_after, transaction_type, description)
+  SELECT NEW.inviter_user_id, NEW.amount, orange_balance, NEW.reward_type,
+    CASE NEW.reward_type
+      WHEN 'registration' THEN '好友注册奖励：' ||
+        (SELECT username FROM users WHERE id = NEW.invitee_user_id)
+      WHEN 'daily_checkin' THEN '好友签到奖励：' ||
+        (SELECT username FROM users WHERE id = NEW.invitee_user_id)
+      ELSE '邀请奖励'
+    END
+  FROM users
   WHERE id = NEW.inviter_user_id;
 END;
 

@@ -4,6 +4,7 @@
     <nav class="profile-tabs" aria-label="个人中心分类">
       <button type="button" :class="{ active: activeTab === 'overview' }" :aria-pressed="activeTab === 'overview'" @click="activeTab = 'overview'">个人信息</button>
       <button type="button" :class="{ active: activeTab === 'promotion' }" :aria-pressed="activeTab === 'promotion'" @click="activeTab = 'promotion'">推广中心</button>
+      <button type="button" :class="{ active: activeTab === 'orange-log' }" :aria-pressed="activeTab === 'orange-log'" @click="activeTab = 'orange-log'">橙子日志</button>
     </nav>
 
     <section v-if="activeTab === 'overview'">
@@ -47,7 +48,7 @@
       </div>
     </section>
 
-    <section v-else class="promotion-card">
+    <section v-else-if="activeTab === 'promotion'" class="promotion-card">
       <h3>🔗 我的邀请链接</h3>
       <p class="promotion-description">好友使用你的邀请码注册，你获得 10 橙子币；好友每日签到，你再获得 2 橙子币。</p>
       <div v-if="currentUser.info" class="promotion-link">
@@ -64,6 +65,35 @@
       >重试</button>
       <p v-if="referralCode" class="promotion-code">你的拉新邀请码：<code>{{ referralCode }}</code></p>
     </section>
+
+    <section v-else class="orange-log-card">
+      <h3>橙子收支记录</h3>
+      <p v-if="!currentUser.info" class="orange-log-message">请先登录后查看橙子日志。</p>
+      <p v-else-if="orangeTransactionsLoading" class="orange-log-message">正在加载橙子日志…</p>
+      <p v-else-if="!orangeTransactions.length" class="orange-log-message">暂无橙子变动记录。</p>
+      <div v-else class="orange-log-table-wrap">
+        <table class="orange-log-table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>变动</th>
+              <th>变动后余额</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="transaction in orangeTransactions" :key="transaction.id">
+              <td>{{ formatOrangeTransactionDate(transaction.created_at) }}</td>
+              <td :class="transaction.amount > 0 ? 'orange-log-credit' : 'orange-log-debit'">
+                {{ transaction.amount > 0 ? '+' : '' }}{{ transaction.amount }}
+              </td>
+              <td>{{ transaction.balance_after ?? '—' }}</td>
+              <td>{{ transaction.description }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -77,6 +107,8 @@ const activeTab = ref('overview')
 const referralCode = ref('')
 const referralLoading = ref(false)
 const profileLoading = ref(false)
+const orangeTransactions = ref([])
+const orangeTransactionsLoading = ref(false)
 const referralLink = computed(() => `${window.location.origin}/?ref=${encodeURIComponent(referralCode.value)}`)
 const isMixedReferralCode = (code) => code.length === 6 && /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{6}$/.test(code)
 
@@ -150,6 +182,47 @@ const copyReferralLink = async () => {
     showToast(`请手动复制：${referralLink.value}`, 'error')
   }
 }
+
+const loadOrangeTransactions = async () => {
+  if (!currentUser.token) {
+    orangeTransactions.value = []
+    return
+  }
+  orangeTransactionsLoading.value = true
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/user/orange-transactions`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` }
+    })
+    const result = await res.json()
+    if (!res.ok) {
+      showToast(result.error || '加载橙子日志失败', 'error')
+      return
+    }
+    orangeTransactions.value = result.transactions || []
+  } catch {
+    showToast('加载橙子日志失败，请稍后重试', 'error')
+  } finally {
+    orangeTransactionsLoading.value = false
+  }
+}
+
+const formatOrangeTransactionDate = (value) => {
+  if (!value) return '—'
+  const timestamp = String(value)
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp)
+    ? timestamp
+    : `${timestamp.replace(' ', 'T')}Z`
+  const date = new Date(normalized)
+  return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleString()
+}
+
+watch([activeTab, () => currentUser.token], ([tab, token]) => {
+  if (tab === 'orange-log' && token) {
+    loadOrangeTransactions()
+  } else if (!token) {
+    orangeTransactions.value = []
+  }
+})
 
 const bindGithub = async () => {
   if (!currentUser.info?.email) return
@@ -344,6 +417,26 @@ watch(() => [currentUser.info?.username, currentUser.info?.email], () => {
 }
 .promotion-code { margin: 14px 0 0; }
 .promotion-code code { padding: 3px 7px; border-radius: 4px; background: #f5f7fa; color: #303133; }
+
+.orange-log-card {
+  margin-top: 15px;
+  padding: 24px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05);
+  color: #606266;
+}
+
+.orange-log-card h3 { margin: 0 0 14px; color: #303133; }
+.orange-log-message { color: #909399; }
+.orange-log-table-wrap { overflow-x: auto; }
+.orange-log-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.orange-log-table th,
+.orange-log-table td { padding: 12px; border-bottom: 1px solid #ebeef5; text-align: left; white-space: nowrap; }
+.orange-log-table th { background: #f7f8fa; font-weight: 600; }
+.orange-log-table tbody tr:last-child td { border-bottom: 0; }
+.orange-log-credit { color: #31a56b; font-weight: 600; }
+.orange-log-debit { color: #f56c6c; font-weight: 600; }
 
 .github-bind { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .email-bind-form { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

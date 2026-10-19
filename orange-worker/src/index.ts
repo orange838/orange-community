@@ -120,6 +120,16 @@ function ensureReferralTables(db: D1Database) {
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); " +
       "CREATE INDEX IF NOT EXISTS idx_referral_attributions_inviter " +
         "ON referral_attributions(inviter_user_id); " +
+      "CREATE TABLE IF NOT EXISTS orange_transactions (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "user_id INTEGER NOT NULL, " +
+        "amount INTEGER NOT NULL, " +
+        "balance_after INTEGER, " +
+        "transaction_type TEXT NOT NULL, " +
+        "description TEXT NOT NULL, " +
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP); " +
+      "CREATE INDEX IF NOT EXISTS idx_orange_transactions_user " +
+        "ON orange_transactions(user_id, id DESC); " +
       "CREATE TABLE IF NOT EXISTS referral_rewards (" +
         "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
         "invitee_user_id INTEGER NOT NULL, " +
@@ -134,7 +144,17 @@ function ensureReferralTables(db: D1Database) {
       "CREATE TRIGGER IF NOT EXISTS apply_referral_reward " +
         "AFTER INSERT ON referral_rewards BEGIN " +
         "UPDATE users SET orange_balance = COALESCE(orange_balance, 0) + NEW.amount " +
-        "WHERE id = NEW.inviter_user_id; END; " +
+        "WHERE id = NEW.inviter_user_id; " +
+        "INSERT INTO orange_transactions " +
+        "(user_id, amount, balance_after, transaction_type, description) " +
+        "SELECT NEW.inviter_user_id, NEW.amount, orange_balance, NEW.reward_type, " +
+          "CASE NEW.reward_type " +
+            "WHEN 'registration' THEN '好友注册奖励：' || " +
+              "(SELECT username FROM users WHERE id = NEW.invitee_user_id) " +
+            "WHEN 'daily_checkin' THEN '好友签到奖励：' || " +
+              "(SELECT username FROM users WHERE id = NEW.invitee_user_id) " +
+            "ELSE '邀请奖励' END " +
+        "FROM users WHERE id = NEW.inviter_user_id; END; " +
       "INSERT OR IGNORE INTO referral_rewards " +
         "(invitee_user_id, inviter_user_id, reward_type, reward_date, amount) " +
         "SELECT invitee_user_id, inviter_user_id, 'registration', '', 10 " +
@@ -921,6 +941,19 @@ async function handle(request: Request, env: Env) {
     }
   }
 
+  if (url.pathname === "/api/user/orange-transactions" && request.method === "GET") {
+    const auth = await getAuth(request, env);
+    if (!auth) return json({ error: "未登录" }, 401);
+    const user = await getUserByAuth(env.DB, auth);
+    if (!user) return json({ error: "用户不存在" }, 404);
+    await ensureReferralTables(env.DB);
+    const rows = await env.DB.prepare(
+      "SELECT id, amount, balance_after, transaction_type, description, created_at " +
+      "FROM orange_transactions WHERE user_id = ? ORDER BY id DESC LIMIT 100"
+    ).bind(user.id).all();
+    return json({ transactions: rows.results });
+  }
+
   if (url.pathname === "/api/referral-code/validate" && request.method === "POST") {
     const referralCode = String(body.referral_code ?? "").trim();
     if (!isValidReferralCode(referralCode)) return json({ valid: false });
@@ -1334,6 +1367,11 @@ async function handle(request: Request, env: Env) {
       env.DB.prepare("INSERT INTO checkin_records (user_id, checkin_date, points) VALUES (?, ?, 5)").bind(user.id, date),
       env.DB.prepare("UPDATE users SET orange_balance = ?, last_sign_in_date = ? WHERE id = ?").bind(balance, date, user.id),
       env.DB.prepare(
+        "INSERT INTO orange_transactions " +
+        "(user_id, amount, balance_after, transaction_type, description) " +
+        "VALUES (?, 5, ?, 'checkin', '每日签到奖励')"
+      ).bind(user.id, balance),
+      env.DB.prepare(
         "INSERT OR IGNORE INTO referral_rewards " +
         "(invitee_user_id, inviter_user_id, reward_type, reward_date, amount) " +
         "SELECT invitee_user_id, inviter_user_id, 'daily_checkin', ?, 2 " +
@@ -1504,9 +1542,16 @@ async function handle(request: Request, env: Env) {
     }
     const balance = Number(body.orange_balance);
     if (!Number.isInteger(balance) || balance < 0) return json({ error: "橙子数量必须为非负整数" }, 400);
+    await ensureReferralTables(env.DB);
     await env.DB.batch([
       env.DB.prepare("UPDATE users SET orange_balance = ?, role = ? WHERE id = ?")
         .bind(balance, role, target.id),
+      env.DB.prepare(
+        "INSERT INTO orange_transactions " +
+        "(user_id, amount, balance_after, transaction_type, description) " +
+        "SELECT id, ?, orange_balance, 'admin_adjustment', '管理员调整橙子余额' " +
+        "FROM users WHERE id = ? AND orange_balance != ?"
+      ).bind(balance - Number(target.orange_balance ?? 0), target.id, Number(target.orange_balance ?? 0)),
       env.DB.prepare(
         "INSERT INTO admin_audit_logs " +
         "(admin_email, admin_username, target_user_id, target_email, target_username, " +
