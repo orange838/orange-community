@@ -121,8 +121,6 @@
         </template>
 
         <!-- PlayCaptcha 娃娃机人机验证（获取验证码前必须通过） -->
-        <PlayCaptcha v-if="needPlayCaptcha" @verified="playCaptchaVerified = true" />
-
         <!-- Turnstile 人机验证 -->
         <div class="form-item turnstile-item">
           <label>人机验证</label>
@@ -163,10 +161,9 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { currentUser } from '../store'
-import PlayCaptcha from './PlayCaptcha.vue'
+import { useRouter } from 'vue-router'
 
-// PlayCaptcha 娃娃机人机验证是否通过（获取邮箱验证码前要求完成）
-const playCaptchaVerified = ref(false) 
+const router = useRouter() 
 
 const props = defineProps({ isLogin: { type: Boolean, default: true } })
 const emit = defineEmits(['close', 'update:isLogin'])
@@ -262,13 +259,6 @@ const turnstileContainerRegister = ref(null)
 const turnstileContainerReset = ref(null)
 const resetMode = ref(false)   // 忘记密码模式
 
-// 是否需要 PlayCaptcha 娃娃机验证（有“获取邮箱验证码”按钮的场景）
-const needPlayCaptcha = computed(() => {
-  if (resetMode.value) return true
-  if (!props.isLogin && !resetMode.value && !formData.invite) return true
-  if (props.isLogin && !resetMode.value && loginMethod.value === 'code') return true
-  return false
-})
 const currentTurnstileToken = ref('')
 const turnstileError = ref('')
 let turnstileTimeout = null
@@ -473,8 +463,11 @@ const sendCode = async () => {
   }
 
   // 获取验证码前必须完成 PlayCaptcha 娃娃机人机验证
-  if (!playCaptchaVerified.value) {
+  // 获取验证码前必须完成 PlayCaptcha 娃娃机验证（跳转单独页 /captcha 完成，10 分钟内有效）
+  const captchaTs = Number(localStorage.getItem('captcha_verified') || 0)
+  if (Date.now() - captchaTs > 10 * 60 * 1000) {
     showToast('请先完成抓娃娃人机验证！', 'error')
+    router.push('/captcha')
     return
   }
   // 同时需要 Turnstile 人机验证通过
