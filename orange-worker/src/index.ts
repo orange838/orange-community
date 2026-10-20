@@ -385,6 +385,17 @@ async function hmacSign(secret: string, data: string) {
   return new Uint8Array(await crypto.subtle.sign("HMAC", key, encode(data)));
 }
 
+function timingSafeStringEqual(left: string, right: string) {
+  const leftBytes = encode(left);
+  const rightBytes = encode(right);
+  if (leftBytes.length !== rightBytes.length) return false;
+  let difference = 0;
+  for (let index = 0; index < leftBytes.length; index++) {
+    difference |= leftBytes[index] ^ rightBytes[index];
+  }
+  return difference === 0;
+}
+
 async function createToken(secret: string, email: string, username: string, role: string, ttlHours = TOKEN_TTL_HOURS) {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
@@ -403,7 +414,7 @@ async function verifyToken(secret: string, token: string) {
     const [header, payload, sig] = parts;
     const signingInput = `${header}.${payload}`;
     const expected = b64url(await hmacSign(secret, signingInput));
-    if (expected !== sig) return null;
+    if (!timingSafeStringEqual(expected, sig)) return null;
     const parsed = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload))) as {
       email: string; username: string; role: string; exp: number;
     };
@@ -435,7 +446,7 @@ async function verifyGithubState(secret: string, state: string) {
     const parts = state.split(".");
     if (parts.length !== 2) return null;
     const expected = b64url(await hmacSign(secret, parts[0]));
-    if (expected !== parts[1]) return null;
+    if (!timingSafeStringEqual(expected, parts[1])) return null;
     const parsed = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[0]))) as {
       mode: string; bindEmail?: string; bindUserId?: number; exp: number;
     };
@@ -575,10 +586,12 @@ async function getUserByEmail(db: D1Database, email: string) {
 }
 
 async function getUserByIdentifier(db: D1Database, identifier: string) {
+  const userByEmail = await getUserByEmail(db, identifier);
+  if (userByEmail) return userByEmail;
   return db.prepare(
     "SELECT id, email, username, password, orange_balance, last_sign_in_date, role " +
-    "FROM users WHERE email = ? OR username = ?"
-  ).bind(identifier, identifier).first<User>();
+    "FROM users WHERE username = ?"
+  ).bind(identifier).first<User>();
 }
 
 async function getUserById(db: D1Database, id: number) {
@@ -857,7 +870,6 @@ async function buildDashboardStatus(env: Env) {
   }));
   const pagesStatus = domainChecks.every((check) => check.status === "OK") ? "OK" : "WARN";
   const httpsDetail = [
-    "检查方式：HTTPS HEAD 请求；HTTP 2xx 表示网站成功响应。",
     ...DASHBOARD_DOMAINS.map((domain, index) =>
       `${domain}：${domainChecks[index].detail}`
     )
