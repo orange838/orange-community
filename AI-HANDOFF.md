@@ -1,0 +1,123 @@
+# AI 助手共享交接记录
+
+> 所有参与本仓库的编程助手先阅读根目录 [`AGENTS.md`](./AGENTS.md) 和本文档。
+> 本文只记录项目上下文和变更摘要，不存放密钥或其他秘密。
+
+## 项目现状
+
+- 仓库：`orange838/orange-community`，主要分支：`main`。
+- 前端：`orange-frontend/`，Vue 3 + Vite。
+- 生产 API：`orange-worker/`，Cloudflare Worker + D1；`orange-backend/` 是本地 FastAPI + SQLite 后端。两个目录同属此 Git 仓库，API 路由与主要业务行为需保持同步。
+- 监控界面：`cloudflare-monitor/`；读取 Worker 的 `/api/status` 实时状态。
+- 生产 Worker 绑定 D1。第三方凭据应只通过运行环境的 Secret 管理；不得写入源码、此文件或 Git。
+- 仓库许可证已改为根目录 `LICENSE` 中的自定义非商业使用许可：非商业用途按条款使用，商业用途须事先取得书面授权；不是 GPLv3 / OSI 开源许可证。
+
+## 最近同步点
+
+- 最近同步的后端代码提交：`ae7e990`（2026-10-20，本地 FastAPI 与生产 Worker API 对齐）。
+- 在继续任务前，检查从该提交到当前 HEAD 的提交，以及所有未提交修改。
+- `build-guide.js` 和 `橙子社区类项目搭建指南.docx` 在最近检查时是未跟踪的用户文件；除非用户明确要求，不要编辑、删除或纳入提交。
+- `ae7e990` 已提交；推送前需检查当前 `main` 与 `origin/main` 的 ahead/behind 状态。账号封禁/超级管理员相关代码已在当前历史中，生产 D1 的封禁字段迁移状态需以数据库实际状态确认。
+
+## 已知行为与注意事项
+
+- Worker 的 `/api/status` 为监控看板提供实时状态数据，包含 Pages/域名探测、API、D1 计数、Git 提交和 Turnstile 汇总。
+- 监控应区分“正常 / 警告 / 未知”；探测或 D1 查询失败不能用“正常”或 0 伪装。
+- 看板实时状态接口不可用时，不要把静态快照冒充为当前实时状态。
+- Turnstile 统计只记录动作、通过状态、主机名和时间；不应保存验证 Token。
+- `orange-backend/main.py` 与 `orange-worker/src/index.ts` 当前有相同的 32 个 HTTP 路由；SQLite/D1 持久化写法和运行时健康状态文案按各自环境区分。FastAPI 帖子过滤覆盖常见中英文词和常见变体，Worker 使用 `glin-profanity` 的完整词库，词库覆盖面不完全相同。
+- README 不应包含本地运行/部署方法，也不应包含 Cloudflare 部署说明。
+
+## 最近交接记录
+
+### 2026-10-20 — 同步本地 FastAPI 与线上 Worker 后端
+- `orange-backend/main.py` 补齐 Worker 的 `/api/status`、拉新码/归因与奖励、橙子流水、帖子、站内消息、封禁状态与管理接口，并保持邮件验证码尝试限制、密码强度和 Turnstile 动作/主机名校验。
+- SQLite 启动迁移新增帖子、消息、推荐奖励、橙子流水和封禁字段；奖励由幂等唯一约束及触发器发放；删除旧拉新码别名表，旧码不再可用。
+- 将本地已有的邮箱优先账号查找、HMAC 恒时签名比较同步到 `orange-worker/src/index.ts`；同时移除用户要求删除的 HTTP 2xx 解释文案。
+- 验证：Python 编译、Worker TypeScript 检查通过；两端 HTTP 路由集合均为 32 项且一致；隔离 SQLite 测试覆盖邮箱注册和无邮箱邀请码注册、推荐奖励/每日签到幂等、帖子过滤、封禁/解封、橙子日志、旧库迁移与监控响应。
+- 提交：`ae7e990`。本次同步范围为同一主仓库内的 `orange-backend/` 与 `orange-worker/` 两个目录；推送待确认。
+
+### 2026-10-19 — 将签到与拉新邀请码整合进任务中心
+- `orange-frontend/src/App.vue` 将侧栏“签到”入口改为“任务”；新增 `/tasks` 路由，旧 `/checkin` 自动跳转到任务中心，OAuth 现存跳转链接继续有效。
+- 新增 `orange-frontend/src/view/Tasks.vue`：类别采用横向标签切换；每个类别下的任务同时以表格行展示（图标、名称、描述、奖励、操作），不需要点击任务后再显示。迁入原签到操作并保留邮箱账号签到限制；登录用户进入任务中心时自动确保专属拉新码存在。
+- `orange-frontend/src/view/Profile.vue` 移除拉新邀请码模块；个人信息页仍保留签到次数摘要。
+- 初版提交 `267cd3e` 和自动邀请码/横向分类修订 `b80595b` 已推送。后续改为类别下直接展示所有具体任务列表行，`npm run build` 和 `git diff --check` 通过；当前修订待提交推送。
+
+### 2026-10-19 — 六位拉新码及免邮箱注册归因
+- 拉新码改为六位大小写字母/数字组合；旧码立即失效，不保留旧码别名。
+- 注册表单对邮箱验证码注册和管理员免邮箱邀请码注册都提供可选拉新码输入；后端两种注册路径都会验证并记录归因，管理员邀请码仅代表免邮箱注册资格，与拉新码分离。
+- 更新免邮箱注册与忘记密码文案，说明两种码的用途以及免邮箱账号需先绑定邮箱才可通过邮件重置密码；推广分类改名“推广中心”。
+- 验证及推送状态待完成。
+
+### 2026-10-18 — 普通用户拉新邀请码
+- `orange-worker/schema.sql` 与 `orange-worker/src/index.ts`：新增每位用户一个可复用拉新码；已登录用户可创建，普通邮箱注册时可附带拉新码并在新表中持久记录邀请人与被邀请人。拒绝无效码及使用本人邮箱自邀；现有管理员生成的一次性无邮箱邀请码流程未改动。
+- `orange-frontend/src/view/Profile.vue`：个人信息页创建和复制 `?ref=` 拉新链接；`LoginModal.vue` 支持从链接预填或手动填写拉新码，仍走原有邮箱验证码注册；`App.vue` 识别拉新链接并打开注册弹窗。
+- 不发放奖励或额外权益；每位用户仅有一个码，允许重复使用。新表由 Worker 幂等自动创建，`schema.sql` 同步供新库使用。
+- 验证：Worker `npm run typecheck`、前端 `npm run build`、SQLite schema/邀请关系 SQL 检查和 `git diff --check` 通过。提交 `3d6a2c8` 已推送到 `origin/main`。
+
+### 2026-10-18 — 看板(cloudflare-monitor)新增帖子数/消息数
+- worker `buildDashboardStatus` 的 `/api/status` 额外统计 `posts`（帖子）、`user_messages`（消息）行数，D1 detail 改为 "8 张表 / N 位用户 / M 条帖子 / K 条消息"，d1Details 新增 Posts、Messages 两项。
+- 看板前端用 `renderList(d1List, data.d1Details)` 动态遍历渲染，无需改前端，自动显示新项。
+- commit `79fce59` 已 push，线上验证 d1Details Posts=0 / Messages=26。
+### 2026-10-16 — 账号封禁/禁言与超级管理员
+
+- 修改 `orange-worker/src/index.ts`：用户管理增加封禁、解封和超级管理员权限；封禁原因必填，可永久或按正整数天临时封禁；橙子账号及超级管理员不可被封禁；仅橙子账号可授予/撤销超级管理员角色；超级管理员可使用现有全部后台 API。
+- 封禁仅禁止发新帖，保留登录、签到、浏览、个人资料和旧帖；服务端在发帖接口校验，到期后按北京时间显示期限并自动恢复发帖权限。
+- 修改 `orange-frontend/src/view/Admin.vue`、`App.vue`、`Posts.vue`、`Profile.vue` 和 `router/index.js`：后台封禁/解封界面、铃铛消息和每次新登录的封禁弹窗、帖子区禁言状态、超级管理员入口与角色显示。
+- 修改 `orange-worker/schema.sql` 并新增 `orange-worker/migration_user_bans.sql`：新库 schema 已含字段；已有 D1 需先执行一次迁移再推送触发自动部署。尚未执行数据库迁移或推送。
+- 验证：Worker `npm run typecheck`、前端 `npm run build`、迁移 SQL 的 SQLite 结构检查均通过；`git diff --check` 通过。
+- 范围按用户确认仅包括生产 Worker 和前端；兼容 FastAPI 后端未修改。
+- 登录状态监听另修复为 getter watch source，确保已打开页面后登录也能收到封禁提醒。前端 build 通过。
+- 后续同步：上述功能经过历史改写后已进入当前 `main`（相关当前提交包括 `663c43c`、`aa1a5d8`、`cc7d94d`）。生产 D1 是否已执行 `migration_user_bans.sql` 未在本次确认，涉及该表结构的生产操作前需核对。
+
+### 2026-10-12 — 新增帖子广场发帖功能 + glin-profanity 敏感词过滤
+
+- worker（orange-worker）：新增 `/api/posts` POST（鉴权 + 过滤标题/正文后入库）与 GET（列表倒序，可选 limit）；`filterProfanity()` 双 Filter（英文 wordBoundaries:true + 中文 wordBoundaries:false，detectLeetspeak aggressive），命中替换为 ***；`ensurePostsTable()` 首次调用自动建 posts 表。schema.sql 已追加 posts 建表语句。
+- 前端（orange-frontend）：新增 `view/Posts.vue`（发帖表单+帖子列表），路由 `/posts`，导航新增"帖子广场"入口。
+- 依赖：orange-worker 安装 glin-profanity（零依赖纯 JS，可在 CF Worker 运行）。
+- 本地验证：worker typecheck、前端 build 均通过；敏感词过滤逻辑已实测（中英文+变体词 sh1t/f*ck 均命中替换）。
+- 提交：`ea7dba6`（发帖）、`9d430f7`（gitignore 本地产物）、`3e803e3`（登录判断改用 token）。已全部 push 并部署上线。
+- 线上实测（通过）：用未绑邮箱账号 123 发帖含 f*ck/下贱/sh1t，命中并替换为 ***；列表展示过滤后文本；DB 入库为过滤后内容。
+
+##### 网络排查记录（重要，避免下次重复踩坑）
+- 现象：git push / VS Code 报 `ssh: connect to github.com port 22: Connection refused`。
+- **根因**：`C:\Windows\System32\drivers\etc\hosts` 被加速工具（很可能是 Steam++ “GitHub 加速”）写入多条 `github.com → 127.0.0.1`，git/命令行走 hosts 优先把 github 解析到本机 127.0.0.1，本机无 22 服务故 refused；真实 IP（如 20.205.243.166）网络是通的。
+- 临时绕过（不改系统文件）：`git config core.sshCommand 'ssh -o HostName=<真实IP> -o StrictHostKeyChecking=accept-new'`，IP 会变需重查 `nslookup github.com`；彻底解决应关闭加速器或清理 hosts 的 github 条目。
+- 另：D1 API token 只读，无法在线建表/UPDATE；posts 表由 worker `ensurePostsTable()` 启动时自动创建。
+- 补充（10-13）：内置中文词库不含拼音缩写（SB/CNM/牛批 能发），已在 filterProfanity 中文 Filter 加 customWords 补齐（sb/cnm/cnmb/nmd/tmd/wqnmlgb/草泥马/尼玛/牛批/牛b/王八蛋/去你妈的/狗日的/色情/约炮 + md/jb/滚镂子/废物/白痴/智障/蠢货/傻狗/舔狗/婊子/贱人/贱货/畜生/杂种/狗东西/绿帽/他妈的/奶奶的/操你/日你/渣男/人渣）。commit `27232b8`，线上实测 SB/CNM/牛批 均替换为 ***。
+- 补充（10-13）：`ignoreWords:["逼"]` 豁免"逼"单字，避免"牛逼"误过滤（实测"牛逼/这题真牛逼"通过，"傻逼"仍靠整词拦截，SB 仍拦截）。
+- 删帖功能（10-13）：worker 新增 `DELETE /api/posts?id=`（作者本人或管理员可删），前端 Posts.vue 列表项按作者/管理员显示"删除"按钮。commit `f872b03`。线上实测：管理员删除残留帖子 id=2（操）、id=3（SB）成功，DB 已清。
+- 消息系统（10-13）：顶部用户名旁新增🔔铃铛 + 未读数（红点/数字），点击弹消息面板展示内容+时间，打开即标记已读；去掉原登录后"管理员改信息"弹窗。worker：删帖时若管理员删别人的帖子→给作者 INSERT 未读消息"管理员删除了你的帖子《xx》"（作者自己删/管理员删自己 不通知）。commit `7bc43f0`。线上实测：管理员删 123 的帖子后，DB 给 123 插入未读消息 id=13 成功；前端铃铛渲染正常。
+### 2026-10-11 — 修复绑邮箱提醒弹窗仍不弹（toastRef 挂载时机）
+
+- 现象：消息弹窗（showAlert）刷新能弹，但绑邮箱提醒（showConfirm）刷新不弹。
+- 根因：`orange-frontend/src/App.vue` 绑邮箱 watch 用 `{ immediate: true }`。immediate 回调在父组件 **setup 同步阶段**执行，此时 `<Toast ref>` 子组件尚未 mount，`toastRef.value` 为 `null`，`toastRef.value?.showConfirm(...)` 被静默跳过，且 `emailReminded` 已置 true → 之后永不弹。
+- 修复：把绑邮箱检查抽成 `remindBindEmail()`，改为 `watch(currentUser.info)`（登录变化触发）+ `onMounted` 里调用一次（刷新/已有登录态场景，此时 Toast 已挂载）。
+- 验证：前端 `npm run build` 通过；commit `44dbbef` 已 push，等待部署后实测。
+### 2026-10-10 — 修复两个提醒弹窗在页面刷新后不生效
+
+- 根因：`orange-frontend/src/App.vue` 两个 `watch(currentUser.info, ...)`（未绑邮箱提醒、管理员消息提醒）无 `immediate: true`，页面刷新时 `info` 从 localStorage 一开始就有值，`watch` 只在对象变化时触发，初次有值不触发 → 弹窗不弹。
+- 修复：两处 watch 结尾加 `{ immediate: true }`。未登录时 `info` 为 null，两处守卫（`emailReminded` / `msgChecked`）仍会正确重置，登录后照常触发。
+- 验证：前端 `npm run build` 通过。
+- 提交并推送：`d24b56d`。
+### 2026-10-09 — 去掉登录提醒的 SSO 限制
+
+- 修改 `orange-frontend/src/App.vue`：未绑邮箱提醒、管理员消息弹窗两处原先 `if (isSsoMode.value || ...) return` 被 SSO 模式（errbook_sso 授权弹窗）跳过，现去掉 `isSsoMode.value` 限制，常规登录与 SSO/OAuth 登录均生效；同步更新两处注释。
+- 验证：前端 `npm run build` 通过。
+- 提交并推送：`0d4ca57`。
+
+### 2026-10-09 — 页脚新增土豆公益推广徽章
+
+- 修改 orange-frontend/src/App.vue：页脚 .site-footer 改为 flex 布局，在现有 DigitalPlat 徽章旁并排新增一个黄色风格“土豆公益”推广徽章，链接 https://tudouai.cn/r/3n6bl5b（土豆公益账号注册推广链接）。
+- 只加了社区站页脚，未改动其它页面。
+- 验证：前端 npm run build 通过。
+- 提交并推送：48db853。
+- 文案修正：实际访问确认 tudouai.cn 是“免费我的世界/七日杀/幻兽帕鲁/饥荒联机 · 一键开服”的游戏联机平台，不是公益慈善。徽章主文案已改为“免费我的世界/七日杀/幻兽帕鲁联机 / 一键开服”，提交推送 9f2a963。
+
+### 2026-10-07 — 监控准确性与许可证澄清
+
+- 修改 `orange-worker/src/index.ts`：给监控接口增加实际 HTTP 探测；探测失败和 D1 统计失败如实报告警告/无法获取。
+- 修改 `cloudflare-monitor/app.js`：实时接口失败时显示未知，不再读取旧快照伪装实时状态。
+- 新增 `LICENSE`，并修改根目录中英文 README：采用非商业使用许可，商业用途须事先书面授权。
+- 验证：Worker `npm run typecheck`、监控 JS `node --check`、前端 `npm run build` 均通过。
+- 提交并推送：`b9af95e`。
