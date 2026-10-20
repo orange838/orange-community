@@ -1230,6 +1230,11 @@ async function handle(request: Request, env: Env) {
     const typeKey = String(body.type ?? "login");
     const type = typeKey === "login" ? "登录" : typeKey === "reset" ? "重置密码" : "注册";
     if (!email) return json({ error: "没邮箱" }, 400);
+    // 获取验证码需通过 Turnstile 人机验证（防滥用发送验证码）
+    const tsAction = typeKey === "reset" ? "reset" : typeKey === "register" ? "register" : "login";
+    if (!await verifyTurnstile(body.cf_token as string | undefined, tsAction, request, env, env.DB)) {
+      return json({ error: "人机验证失败，请重试" }, 400);
+    }
     if (!env.RESEND_API_KEY) return json({ error: "服务器配置错误：缺少 RESEND_API_KEY" }, 500);
     // 重置密码：邮箱必须已注册
     if (typeKey === "reset") {

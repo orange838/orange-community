@@ -477,6 +477,11 @@ const sendCode = async () => {
     showToast('请先完成抓娃娃人机验证！', 'error')
     return
   }
+  // 同时需要 Turnstile 人机验证通过
+  if (!currentTurnstileToken.value) {
+    showToast('请先完成人机验证！', 'error')
+    return
+  }
 
   loading.value = true
   try {
@@ -485,7 +490,8 @@ const sendCode = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         email: targetEmail,
-        type: resetMode.value ? 'reset' : (props.isLogin ? 'login' : 'register') 
+        type: resetMode.value ? 'reset' : (props.isLogin ? 'login' : 'register'),
+        cf_token: currentTurnstileToken.value
       })
     })
     const result = await response.json()
