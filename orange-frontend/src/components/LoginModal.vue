@@ -467,6 +467,7 @@ const sendCode = async () => {
   const captchaTs = Number(localStorage.getItem('captcha_verified') || 0)
   if (Date.now() - captchaTs > 10 * 60 * 1000) {
     showToast('请先完成抓娃娃人机验证！', 'error')
+    handleClose()  // 关闭登录/注册弹窗，避免盖住 /captcha 验证页
     router.push('/captcha')
     return
   }
