@@ -179,6 +179,10 @@ td {
   color: #1f2937;
 }
 
+.resource-detail {
+  line-height: 1.65;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

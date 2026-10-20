@@ -40,11 +40,11 @@ function badgeClass(status) {
 
 function labelMap(label) {
   const map = {
-    'Pages Project': 'Pages 项目',
-    'Worker API': 'Worker 接口',
-    'D1 Database': 'D1 数据库',
-    'Git Head': 'Git 头提交',
-    'Database name': '数据库名',
+    'Pages Project': 'Pages 托管项目',
+    'Worker API': '网站后端接口',
+    'D1 Database': '社区数据库',
+    'Git Head': '最新代码版本',
+    'Database name': '数据库名称',
     'Tables': '数据表数量',
     'Users': '用户数',
     'Check-ins': '签到记录数',
@@ -55,22 +55,22 @@ function labelMap(label) {
     'Write queries 24h': '24h 写查询',
     'Rows read 24h': '24h 读取行数',
     'Rows written 24h': '24h 写入行数',
-    'Project': '项目',
-    'Branch': '分支',
-    'Git head': 'Git 头提交',
-    'Pages': 'Pages 项目',
-    'Worker': 'Worker 接口',
-    'D1': 'D1 数据库',
-    'API': 'API 健康',
-    'Deploy': '部署状态',
+    'Project': '项目名称',
+    'Branch': '部署分支',
+    'Git head': '提交版本',
+    'Pages': '网站地址检查',
+    'Worker': '后端接口',
+    'D1': '社区数据库',
+    'API': '接口检查',
+    'Deploy': '代码部署',
     'Turnstile': '人机验证',
     'Passed': '通过次数',
     'Failed': '失败次数',
     'Total': '总次数',
     'Pass rate': '通过率',
-    'HTTPS': 'HTTPS',
-    'Cloudflare': 'Cloudflare',
-    'DNS/SSL': 'DNS/SSL',
+    'HTTPS': '网站 HTTPS',
+    'Cloudflare': 'Cloudflare 资源接入',
+    'DNS/SSL': '域名与加密连接',
     'Security': '安全',
     'Status file': '状态文件',
     'No data': '暂无',
@@ -96,9 +96,9 @@ function renderSummary(summary) {
 
   summaryGrid.innerHTML = cards.map(card => `
     <article class="summary-card">
-      <span class="summary-label">${labelMap(card.label)}</span>
-      <p class="summary-value">${card.value}</p>
-      <div class="summary-meta">${card.meta}</div>
+      <span class="summary-label">${escapeHtml(labelMap(card.label))}</span>
+      <p class="summary-value">${escapeHtml(card.value)}</p>
+      <div class="summary-meta">${escapeHtml(card.meta)}</div>
     </article>
   `).join('');
 }
@@ -106,19 +106,29 @@ function renderSummary(summary) {
 function renderResourceTable(items) {
   resourceTableBody.innerHTML = items.map(item => `
     <tr>
-      <td>${labelMap(item.name)}</td>
-      <td>${labelMap(item.type)}</td>
-      <td><span class="badge ${badgeClass(item.status)}">${formatStatus(item.status)}</span></td>
-      <td>${item.detail}</td>
+      <td>${escapeHtml(labelMap(item.name))}</td>
+      <td>${escapeHtml(labelMap(item.type))}</td>
+      <td><span class="badge ${badgeClass(item.status)}">${escapeHtml(formatStatus(item.status))}</span></td>
+      <td class="resource-detail">${escapeHtml(item.detail).replace(/\n/g, '<br>')}</td>
     </tr>
   `).join('');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[char]);
 }
 
 function renderList(target, items) {
   target.innerHTML = items.map(item => `
     <li>
-      <strong>${labelMap(item.name)}</strong>
-      <span>${labelMap(item.value)}</span>
+      <strong>${escapeHtml(labelMap(item.name))}</strong>
+      <span>${escapeHtml(labelMap(item.value))}</span>
     </li>
   `).join('');
 }
@@ -148,12 +158,12 @@ async function loadDashboard() {
   } catch (error) {
     console.error('监控数据加载失败：', error);
     renderSummary({
-      pages: { status: '未知', domain: '实时状态暂不可用' },
-      worker: { status: '未知', route: '实时状态暂不可用' },
-      d1: { status: '未知', databaseName: '实时状态暂不可用' },
-      https: { status: '未知', domains: '实时状态暂不可用' },
-      api: { status: '未知', endpoint: '实时状态暂不可用' },
-      deploy: { status: '未知', branch: '实时状态暂不可用' }
+      pages: { status: '未知', domain: '网站地址状态暂不可用' },
+      worker: { status: '未知', route: '后端运行状态暂不可用' },
+      d1: { status: '未知', databaseName: '数据库状态暂不可用' },
+      https: { status: '未知', domains: '域名 HTTPS 检查暂不可用' },
+      api: { status: '未知', endpoint: '接口状态暂不可用' },
+      deploy: { status: '未知', branch: '代码版本暂不可用' }
     });
 
     renderResourceTable([

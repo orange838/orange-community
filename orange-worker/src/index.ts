@@ -770,7 +770,9 @@ async function probeUrl(url: string) {
     });
     return {
       status: response.ok ? "OK" : "WARN",
-      detail: `HTTP ${response.status}`
+      detail: response.ok
+        ? `HTTPS 访问成功，服务器返回 HTTP ${response.status}`
+        : `HTTPS 请求已到达，但服务器返回 HTTP ${response.status}`
     };
   } catch (error) {
     const reason = error instanceof Error ? error.name : "NetworkError";
@@ -789,7 +791,7 @@ async function buildDashboardStatus(env: Env) {
     countRows(env, "user_messages"),
     ...DASHBOARD_DOMAINS.map((domain) => probeUrl(`https://${domain}`))
   ]);
-  const apiHealth = { status: "OK", detail: "监控 API 正常响应" };
+  const apiHealth = { status: "OK", detail: "状态查询已成功处理，Worker 正在运行。" };
 
   let passed: number | null = null;
   let failed: number | null = null;
@@ -849,35 +851,58 @@ async function buildDashboardStatus(env: Env) {
     }
   }
 
-  const domains = DASHBOARD_DOMAINS.join(", ");
   const pageDomains = DASHBOARD_DOMAINS.map((domain, index) => ({
     name: domain,
-    value: domainChecks[index].status === "OK" ? "正常" : domainChecks[index].detail
+    value: domainChecks[index].detail
   }));
   const pagesStatus = domainChecks.every((check) => check.status === "OK") ? "OK" : "WARN";
+  const httpsDetail = [
+    "检查方式：HTTPS HEAD 请求；HTTP 2xx 表示网站成功响应。",
+    ...DASHBOARD_DOMAINS.map((domain, index) =>
+      `${domain}：${domainChecks[index].detail}`
+    )
+  ].join("\n");
   const d1Counts = [users, checkins, invites, verifications, posts, messages];
   const d1Status = d1Counts.every((count) => count !== null) ? "OK" : "WARN";
+  const cloudflareStatus = apiHealth.status === "OK" && d1Status === "OK" ? "OK" : "WARN";
   const d1Value = (count: number | null) => count === null ? "无法获取" : String(count);
   const turnstileStatus = passed === null || failed === null || verifications === null ? "WARN" : "OK";
   return {
     generatedAt: new Date().toISOString(),
     source: "worker-live",
     summary: {
-      pages: { status: pagesStatus, domain: domains },
-      worker: { status: apiHealth.status, route: "api.cslblog.dpdns.org/api/status" },
+      pages: { status: pagesStatus, domain: `${DASHBOARD_DOMAINS.length} 个站点域名已逐一检查` },
+      worker: { status: apiHealth.status, route: "GET /api/status 本次请求成功，Worker 正在运行" },
       d1: { status: d1Status, databaseName: "orange-community" },
-      https: { status: pagesStatus, domains: domains },
-      api: { status: apiHealth.status, endpoint: "https://api.cslblog.dpdns.org/api/status" },
+      https: {
+        status: pagesStatus,
+        domains: pagesStatus === "OK"
+          ? `${DASHBOARD_DOMAINS.length} 个站点均可通过 HTTPS 访问`
+          : "存在访问异常，请查看下方域名检查结果"
+      },
+      api: { status: apiHealth.status, endpoint: "GET /api/status 本次请求成功返回" },
       deploy: { status: gitHead === "N/A" ? "WARN" : "OK", branch: "main" },
       turnstile: { status: turnstileStatus, passRate }
     },
     resources: [
-      { name: "Pages Project", type: "Pages", status: pagesStatus, detail: `orange-community / ${domains}` },
-      { name: "Worker API", type: "Worker", status: apiHealth.status, detail: apiHealth.detail },
-      { name: "D1 Database", type: "D1", status: d1Status, detail: d1Status === "OK" ? `8 张表 / ${users} 位用户 / ${posts} 条帖子 / ${messages} 条消息` : "部分数据库统计无法获取" },
-      { name: "HTTPS", type: "DNS/SSL", status: pagesStatus, detail: domainChecks.map((check, index) => `${DASHBOARD_DOMAINS[index]}：${check.detail}`).join("；") },
-      { name: "Account", type: "Cloudflare", status: "OK", detail: "已验证 / 账户已连接" },
-      { name: "Git Head", type: "Deploy", status: gitHead === "N/A" ? "WARN" : "OK", detail: gitHead === "N/A" ? gitHeadError : gitHead },
+      {
+        name: "网站与监控站点",
+        type: "Pages 托管与自定义域名",
+        status: pagesStatus,
+        detail: `社区网站 Pages 项目：orange-community\n监控范围内共检查 ${DASHBOARD_DOMAINS.length} 个站点地址，逐项结果见“网站 HTTPS 连接”。\n${DASHBOARD_DOMAINS.map((domain) => `• ${domain}`).join("\n")}`
+      },
+      { name: "网站后端接口", type: "Cloudflare Worker", status: apiHealth.status, detail: apiHealth.detail },
+      { name: "社区数据库", type: "D1 数据库", status: d1Status, detail: d1Status === "OK" ? `数据库：orange-community\n数据表：8 张\n注册用户：${users} 位\n帖子：${posts} 条\n站内消息：${messages} 条` : "部分数据库统计读取失败，请查看下方 D1 数据库明细。" },
+      { name: "网站 HTTPS 连接", type: "域名加密连接检查", status: pagesStatus, detail: httpsDetail },
+      {
+        name: "Cloudflare 资源接入",
+        type: "Worker 与 D1 连接",
+        status: cloudflareStatus,
+        detail: cloudflareStatus === "OK"
+          ? "Worker 已正常响应，且监控已成功读取 D1 数据库。此项检查资源连接，不代表 Cloudflare 控制台登录状态。"
+          : "Worker 或 D1 数据库检查未通过，请查看对应项目详情。"
+      },
+      { name: "最新代码版本", type: "main 分支", status: gitHead === "N/A" ? "WARN" : "OK", detail: gitHead === "N/A" ? gitHeadError : `Git 提交：${gitHead}` },
       { name: "Turnstile", type: "Security", status: turnstileStatus, detail: passed === null || failed === null ? "最近 24 小时统计无法获取" : `${passed} passed / ${failed} failed (24h)` }
     ],
     domains: pageDomains,
