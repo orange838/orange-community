@@ -455,9 +455,11 @@ const handleLogout = async () => {
 .sidebar-footer a:hover { text-decoration: underline; }
 @media (max-width: 768px) {
   .app-container {
-    display: block;
-    min-height: 100vh;
-    height: auto;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .sidebar {
@@ -465,6 +467,7 @@ const handleLogout = async () => {
     padding: 12px 12px 8px;
     border-right: none;
     border-bottom: 1px solid #e4e7ed;
+    flex: none;
   }
 
   .logo {
@@ -497,8 +500,9 @@ const handleLogout = async () => {
   }
 
   .main-wrapper {
-    min-height: calc(100vh - 104px);
-    overflow: visible;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .top-header {
@@ -515,7 +519,8 @@ const handleLogout = async () => {
 
   .content-area {
     padding: 16px 12px 24px;
-    overflow: visible;
+    flex: 1;
+    overflow-y: auto;
   }
 }
 </style>
