@@ -49,8 +49,8 @@
             <button class="btn-logout" @click="handleLogout">退出登录</button>
           </template>
           <template v-else>
-            <button class="btn-login" @click="openModal(true)">登录</button>
-            <button class="btn-register" @click="openModal(false)">注册</button>
+            <button class="btn-login" @click="router.push('/login?mode=login')">登录</button>
+            <button class="btn-register" @click="router.push('/login?mode=register')">注册</button>
           </template>
         </div>
       </header>
@@ -66,13 +66,6 @@
       </footer>
     </div>
 
-    <!-- 登录弹窗 -->
-    <LoginModal 
-      v-if="showLogin" 
-      v-model:is-login="isLoginMode" 
-      @close="showLogin = false" 
-    />
-
     <!-- 【新增】全局 Toast 组件，给它加个 ref 方便调用 -->
     <Toast ref="toastRef" />
   </div>
@@ -80,13 +73,10 @@
 
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
-import LoginModal from './components/LoginModal.vue'
 import Toast from './components/Toast.vue' // 引入 Toast
 import { currentUser } from './store'
 import { useRouter } from 'vue-router'
 
-const showLogin = ref(false)
-const isLoginMode = ref(true)
 const toastRef = ref(null) // 获取 Toast 组件实例
 const router = useRouter()
 const isAdminRole = (role) => role === 'admin' || role === 'super_admin'
@@ -158,8 +148,8 @@ async function askAuth() {
 function handleSso() {
   if (!detectSso()) return
   if (!currentUser.info) {
-    // 未登录：打开登录弹窗，登录成功后由 watch 触发授权
-    openModal(true)
+    // 未登录：跳转独立登录页，登录成功后由 watch 触发授权
+    router.push('/login?mode=login')
   } else {
     askAuth()
   }
@@ -324,12 +314,7 @@ watch(() => currentUser.info, (user, previousUser) => {
   }
 })
 
-const openModal = (mode) => {
-  isLoginMode.value = mode
-  showLogin.value = true
-}
-
-const handleOpenLoginModal = () => openModal(true)
+const handleOpenLoginModal = () => router.push('/login?mode=login')
 
 const handleGlobalToast = (event) => {
   const { msg, type = 'success' } = event.detail || {}

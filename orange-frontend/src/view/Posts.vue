@@ -69,7 +69,10 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { currentUser } from '../store'
+
+const router = useRouter()
 
 const API = import.meta.env.VITE_API_URL
 const form = ref({ title: '', content: '' })
@@ -85,7 +88,7 @@ let banStatusErrorShown = false
 
 // 用 token 判断登录（email 可能为空——未绑邮箱的账号也是已登录用户，不能据此判断）
 const isLoggedIn = computed(() => Boolean(currentUser.token))
-const goLogin = () => window.dispatchEvent(new CustomEvent('open-login-modal'))
+const goLogin = () => router.push('/login?mode=login')
 
 const toast = (msg, type) => window.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }))
 
