@@ -441,6 +441,17 @@ const onKeydown = (e) => {
 }
 
 onMounted(() => {
+  // 从 /captcha 返回时恢复表单草稿（跳转前已保存）
+  const draft = sessionStorage.getItem('login_draft')
+  if (draft) {
+    try {
+      const d = JSON.parse(draft)
+      Object.assign(formData, d.form || {})
+      if (d.loginMethod) loginMethod.value = d.loginMethod
+      if (typeof d.resetMode === 'boolean') resetMode.value = d.resetMode
+      sessionStorage.removeItem('login_draft')
+    } catch (e) { /* 忽略 */ }
+  }
   renderTurnstile()
   const invite = getInviteFromUrl()
   const referralCode = getReferralFromUrl()
@@ -479,6 +490,12 @@ const sendCode = async () => {
   if (Date.now() - captchaTs > 10 * 60 * 1000) {
     showToast('请先完成抓娃娃人机验证！', 'error')
     if (props.mode !== 'page') handleClose()  // 弹窗模式先关闭，页面模式直接跳转
+    // 跳转前保存表单草稿，返回 /login 后恢复，避免已填内容丢失
+    sessionStorage.setItem('login_draft', JSON.stringify({
+      form: { ...formData },
+      loginMethod: loginMethod.value,
+      resetMode: resetMode.value
+    }))
     router.push('/captcha')
     return
   }
