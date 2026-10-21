@@ -1,6 +1,6 @@
 <template>
-  <div class="modal-overlay" @mousedown.self="handleClose">
-    <div class="modal-content">
+  <div :class="mode === 'page' ? 'page-wrap' : 'modal-overlay'" @mousedown.self="mode !== 'page' && handleClose()">
+    <div :class="mode === 'page' ? 'page-card' : 'modal-content'">
       <h2 class="modal-title">{{ resetMode ? '重置密码' : (isLogin ? '欢迎回来' : '注册账号') }}</h2>
 
       <form class="login-form" @submit.prevent="handleSubmit">
@@ -153,7 +153,7 @@
         <span v-else>已有账号？<a href="javascript:void(0)" @click="switchMode(true)">立即登录</a></span>
       </div>
       
-      <div class="close-btn" @click="handleClose">×</div>
+      <div v-if="mode !== 'page'" class="close-btn" @click="handleClose">×</div>
     </div>
   </div>
 </template>
@@ -165,7 +165,10 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter() 
 
-const props = defineProps({ isLogin: { type: Boolean, default: true } })
+const props = defineProps({ 
+  isLogin: { type: Boolean, default: true },
+  mode: { type: String, default: 'modal' } // 'modal' 弹窗 | 'page' 独立页
+})
 const emit = defineEmits(['close', 'update:isLogin'])
 
 // 统一表单数据对象
@@ -306,7 +309,15 @@ const backToLogin = () => {
   emit('update:isLogin', true)
 }
 
-const handleClose = () => emit('close')
+const handleClose = () => {
+  if (props.mode === 'page') {
+    // 页面模式：登录/注册成功后返回上一页或首页
+    if (window.history.length > 1) router.back()
+    else router.push('/')
+  } else {
+    emit('close')
+  }
+}
 const meetsPasswordRule = (password) =>
   password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password)
 
@@ -467,7 +478,7 @@ const sendCode = async () => {
   const captchaTs = Number(localStorage.getItem('captcha_verified') || 0)
   if (Date.now() - captchaTs > 10 * 60 * 1000) {
     showToast('请先完成抓娃娃人机验证！', 'error')
-    handleClose()  // 关闭登录/注册弹窗，避免盖住 /captcha 验证页
+    if (props.mode !== 'page') handleClose()  // 弹窗模式先关闭，页面模式直接跳转
     router.push('/captcha')
     return
   }
@@ -686,6 +697,8 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
+.page-wrap { display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 50px 16px; box-sizing: border-box; background: #f7f8fa; }
+.page-card { background: #fff; width: 420px; max-width: 100%; padding: 40px 32px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); box-sizing: border-box; }
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;
   /* 小屏/怪比例下留出边距，并允许遮罩层自身滚动 */
   padding: 16px; box-sizing: border-box; overflow-y: auto; }

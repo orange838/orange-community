@@ -6,6 +6,7 @@ import { currentUser } from '../store'
 import Home from '../view/Home.vue'
 import Posts from '../view/Posts.vue'
 import PlayCaptchaPage from '../view/PlayCaptchaPage.vue'
+import LoginPage from '../view/LoginPage.vue'
 import Tasks from '../view/Tasks.vue'
 import Notice from '../view/Notice.vue'
 import Profile from '../view/Profile.vue'
@@ -17,6 +18,7 @@ const routes = [
   { path: '/', component: Home },
   { path: '/posts', component: Posts },
   { path: '/captcha', component: PlayCaptchaPage },
+  { path: '/login', component: LoginPage },
   { path: '/tasks', component: Tasks },
   { path: '/checkin', redirect: '/tasks' },
   { path: '/notice', component: Notice },
