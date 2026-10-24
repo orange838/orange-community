@@ -1,16 +1,17 @@
-/* src/style.css */
+/* src/style.css —— 全局基础样式（必须在 main.js 引入） */
 
-/* 1. 彻底重置 body，去掉默认边距和奇怪的限制 */
+/* 1. 根节点铺满视口，去掉默认外边距，禁止页面级滚动条 */
+html,
 body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  background-color: #f5f7fa; /* 把黑色背景改成咱们设计的浅灰背景 */
-  overflow: hidden; /* 防止出现双重滚动条 */
+  background-color: #f5f7fa;
+  overflow: hidden; /* 页面本身不滚动，滚动交给内容区（.content-area） */
 }
 
-/* 2. 确保 #app 容器也是全屏的 */
+/* 2. #app 也铺满，避免出现第二层滚动 */
 #app {
   width: 100%;
   height: 100%;
@@ -18,7 +19,7 @@ body {
   padding: 0;
 }
 
-/* 3. 去掉默认的字体渲染优化，防止在某些屏幕上发虚 */
+/* 3. 统一盒模型；图片等默认按容器缩放，防止横向溢出 */
 * {
   box-sizing: border-box;
 }

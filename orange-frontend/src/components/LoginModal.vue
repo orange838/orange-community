@@ -1,6 +1,7 @@
 <template>
   <div :class="mode === 'page' ? 'page-wrap' : 'modal-overlay'" @mousedown.self="mode !== 'page' && handleClose()">
     <div :class="mode === 'page' ? 'page-card' : 'modal-content'">
+      <router-link v-if="mode === 'page'" to="/" class="back-home">← 返回首页</router-link>
       <h2 class="modal-title">{{ resetMode ? '重置密码' : (isLogin ? '欢迎回来' : '注册账号') }}</h2>
 
       <form class="login-form" @submit.prevent="handleSubmit">
@@ -161,9 +162,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { currentUser } from '../store'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
-const router = useRouter() 
+const router = useRouter()
+
 
 const props = defineProps({ 
   isLogin: { type: Boolean, default: true },
@@ -183,24 +185,20 @@ const formData = reactive({
   referralCode: '' // 用于：普通邮箱注册的拉新归因
 })
 
-// 从 URL 读取邀请码（通过邀请链接打开时自动预填）
-const getInviteFromUrl = () => {
+// 从路由 query（hash 路由）或 document query 读取邀请码（通过邀请链接打开时自动预填）
+const route = useRoute()
+const getQueryParam = (key) => {
   try {
+    const fromRoute = route?.query?.[key]
+    if (fromRoute) return String(fromRoute)
     const params = new URLSearchParams(window.location.search)
-    return params.get('invite') || ''
+    return params.get(key) || ''
   } catch {
     return ''
   }
 }
-
-const getReferralFromUrl = () => {
-  try {
-    const params = new URLSearchParams(window.location.search)
-    return params.get('ref') || ''
-  } catch {
-    return ''
-  }
-}
+const getInviteFromUrl = () => getQueryParam('invite')
+const getReferralFromUrl = () => getQueryParam('ref')
 
 const countdown = ref(0)
 const loading = ref(false)
@@ -440,18 +438,34 @@ const onKeydown = (e) => {
   if (e.key === 'Escape') handleClose()
 }
 
+// ---- 表单草稿：跳转 /captcha 前保存，返回后恢复（避免已填内容丢失）----
+const DRAFT_KEY = 'login_draft'
+let loginSucceeded = false
+const saveDraft = () => {
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+      form: { ...formData },
+      loginMethod: loginMethod.value,
+      resetMode: resetMode.value
+    }))
+  } catch (e) { /* 忽略 */ }
+}
+const restoreDraft = () => {
+  let raw = null
+  try { raw = sessionStorage.getItem(DRAFT_KEY) } catch (e) { return }
+  if (!raw) return
+  try {
+    const d = JSON.parse(raw)
+    if (d.form) Object.assign(formData, d.form)
+    if (d.loginMethod) loginMethod.value = d.loginMethod
+    if (typeof d.resetMode === 'boolean') resetMode.value = d.resetMode
+  } catch (e) { /* 忽略 */ }
+  try { sessionStorage.removeItem(DRAFT_KEY) } catch (e) { /* 忽略 */ }
+}
+
 onMounted(() => {
-  // 从 /captcha 返回时恢复表单草稿（跳转前已保存）
-  const draft = sessionStorage.getItem('login_draft')
-  if (draft) {
-    try {
-      const d = JSON.parse(draft)
-      Object.assign(formData, d.form || {})
-      if (d.loginMethod) loginMethod.value = d.loginMethod
-      if (typeof d.resetMode === 'boolean') resetMode.value = d.resetMode
-      sessionStorage.removeItem('login_draft')
-    } catch (e) { /* 忽略 */ }
-  }
+  // 从 /captcha 返回时先恢复表单草稿，再做其它初始化
+  restoreDraft()
   renderTurnstile()
   const invite = getInviteFromUrl()
   const referralCode = getReferralFromUrl()
@@ -468,6 +482,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (referralValidationTimer) clearTimeout(referralValidationTimer)
   referralValidationRequest++
+  // 去抓娃娃验证时再存一次草稿（兼容任何原因导致的重建），登录成功后不存
+  if (!loginSucceeded && router.currentRoute.value.path === '/captcha') saveDraft()
   clearTurnstileWidget()
   window.removeEventListener('keydown', onKeydown)
 })
@@ -491,11 +507,7 @@ const sendCode = async () => {
     showToast('请先完成抓娃娃人机验证！', 'error')
     if (props.mode !== 'page') handleClose()  // 弹窗模式先关闭，页面模式直接跳转
     // 跳转前保存表单草稿，返回 /login 后恢复，避免已填内容丢失
-    sessionStorage.setItem('login_draft', JSON.stringify({
-      form: { ...formData },
-      loginMethod: loginMethod.value,
-      resetMode: resetMode.value
-    }))
+    saveDraft()
     router.push('/captcha')
     return
   }
@@ -679,6 +691,8 @@ const handleSubmit = async () => {
       showToast(result.message, 'success')
 
       // 【关键】登录成功，保存用户信息
+      loginSucceeded = true
+      try { sessionStorage.removeItem(DRAFT_KEY) } catch (e) { /* 忽略 */ }
       if (result.user) {
         currentUser.setInfo({ ...result.user, token: result.token })
       }
@@ -714,8 +728,15 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
-.page-wrap { display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 50px 16px; box-sizing: border-box; background: #f7f8fa; }
-.page-card { background: #fff; width: 420px; max-width: 100%; padding: 40px 32px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); box-sizing: border-box; }
+.page-wrap { width: 100%; display: flex; justify-content: center; align-items: flex-start; padding: 0; box-sizing: border-box; background: transparent; }
+.page-card { background: #fff; width: 420px; max-width: 100%; margin: 0 auto; padding: 26px 28px 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); box-sizing: border-box; }
+/* 页面模式：压缩间距，保证在内容区高度内尽量完整显示 */
+.page-wrap .modal-title { font-size: 20px; margin-bottom: 18px; }
+.back-home { display: inline-block; margin-bottom: 8px; color: #909399; font-size: 13px; text-decoration: none; }
+.back-home:hover { color: #ff9900; }
+.page-wrap .form-item { margin-bottom: 14px; }
+.page-wrap .modal-footer { margin-top: 14px; }
+.page-wrap .github-login { margin-top: 12px; }
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;
   /* 小屏/怪比例下留出边距，并允许遮罩层自身滚动 */
   padding: 16px; box-sizing: border-box; overflow-y: auto; }
