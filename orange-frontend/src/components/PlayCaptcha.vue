@@ -33,5 +33,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.play-captcha-wrap { display: flex; justify-content: center; margin: 10px 0; }
+.play-captcha-wrap { display: flex; justify-content: center; width: 100%; max-width: 440px; min-width: 0; margin: 10px 0; }
+.play-captcha-wrap :deep(.clawcap) { width: 100%; max-width: 100%; }
 </style>

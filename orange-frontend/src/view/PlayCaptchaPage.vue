@@ -34,8 +34,10 @@ const goBack = () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 80vh;
-  padding: 30px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 16px 32px;
+  overflow-x: hidden;
   text-align: center;
 }
 .captcha-tip { color: #909399; margin-bottom: 20px; }

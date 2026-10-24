@@ -1,5 +1,10 @@
 <template>
-  <div class="app-container">
+  <!-- 登录/注册、人机验证：独立整页（不带侧边栏 / 顶栏 / 页脚） -->
+  <div v-if="isBarePage" class="bare-shell">
+    <router-view />
+  </div>
+
+  <div v-else class="app-container">
     <!-- 左侧侧边栏 -->
     <aside class="sidebar">
       <div class="logo">🍊 橙子社区</div>
@@ -66,19 +71,24 @@
       </footer>
     </div>
 
-    <!-- 【新增】全局 Toast 组件，给它加个 ref 方便调用 -->
-    <Toast ref="toastRef" />
   </div>
+
+  <!-- 全局 Toast 组件：挂载在最外层，任何页面都能调用 -->
+  <Toast ref="toastRef" />
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import Toast from './components/Toast.vue' // 引入 Toast
 import { currentUser } from './store'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 const toastRef = ref(null) // 获取 Toast 组件实例
 const router = useRouter()
+const route = useRoute()
+// 这些页面单独整页显示，不套左侧栏 / 顶栏 / 页脚
+const BARE_PAGES = ['/login', '/captcha']
+const isBarePage = computed(() => BARE_PAGES.includes(route.path))
 const isAdminRole = (role) => role === 'admin' || role === 'super_admin'
 let appMounted = false
 // 开站时长：从站点上线那天开始算（要改开站日期就改下面这一行）
@@ -351,12 +361,14 @@ onMounted(() => {
   remindBindEmail()  // Toast 已挂载后再检查一次，处理刷新/已有登录态场景
   checkBanStatus()
 
-  // 通过邀请或拉新链接打开时，自动弹出注册弹窗
-  // （链接参数预填由 LoginModal 挂载时的 onMounted 读取 URL 完成）
+  // 通过邀请或拉新链接打开时，自动跳到注册页
+  // （链接参数预填由 LoginModal 挂载时的 onMounted 读取 query 完成）
   if (!currentUser.info) {
     const params = new URLSearchParams(window.location.search)
-    if (params.get('invite') || params.get('ref')) {
-      openModal(false)
+    const invite = params.get('invite') || ''
+    const ref = params.get('ref') || ''
+    if ((invite || ref) && route.path !== '/login') {
+      router.push({ path: '/login', query: { mode: 'register', ...(invite ? { invite } : {}), ...(ref ? { ref } : {}) } })
     }
   }
 })
@@ -385,14 +397,15 @@ const handleLogout = async () => {
 </script>
 
 <style scoped>
-.app-container { display: flex; height: 100vh; background-color: #f5f7fa; color: #333; font-family: "Microsoft YaHei", sans-serif; }
+.bare-shell { height: 100vh; height: 100dvh; overflow-y: auto; background: #f7f8fa; -webkit-overflow-scrolling: touch; }
+.app-container { display: flex; height: 100vh; height: 100dvh; overflow: hidden; background-color: #f5f7fa; color: #333; font-family: "Microsoft YaHei", sans-serif; }
 .sidebar { width: 220px; background-color: #fff; border-right: 1px solid #e4e7ed; display: flex; flex-direction: column; padding-top: 20px; }
 .logo { font-size: 22px; font-weight: bold; color: #ff9900; text-align: center; margin-bottom: 30px; }
 .nav-menu { list-style: none; padding: 0; margin: 0; }
 .nav-menu li a { display: block; padding: 15px 25px; text-decoration: none; color: #606266; transition: all 0.3s; cursor: pointer; }
 .nav-menu li a:hover, .nav-menu li a.active { background-color: #fff7e6; color: #ff9900; border-right: 3px solid #ff9900; }
-.main-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.top-header { height: 60px; background-color: #fff; border-bottom: 1px solid #e4e7ed; display: flex; justify-content: flex-end; align-items: center; padding: 0 30px; }
+.main-wrapper { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.top-header { flex: none; height: 60px; background-color: #fff; border-bottom: 1px solid #e4e7ed; display: flex; justify-content: flex-end; align-items: center; padding: 0 30px; }
 .auth-buttons { display: flex; gap: 10px; align-items: center; }
 .username { font-weight: bold; color: #333; }
 .btn-login, .btn-register, .btn-logout { padding: 8px 20px; border-radius: 20px; border: none; cursor: pointer; font-size: 14px; }
@@ -447,7 +460,7 @@ const handleLogout = async () => {
 .msg-empty { padding: 24px; text-align: center; color: #909399; font-size: 13px; }
 .btn-logout:hover { background-color: #e05c5c; }
 .content-area { flex: 1; padding: 30px; overflow-y: auto; }
-.site-footer { display: flex; justify-content: center; align-items: center; padding: 14px 20px 18px; background-color: #f5f7fa; }
+.site-footer { flex: none; display: flex; justify-content: center; align-items: center; padding: 14px 20px 18px; background-color: #f5f7fa; }
 
 .sidebar-footer { margin-top: auto; padding: 14px 25px 18px; border-top: 1px solid #f0f2f5; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
 .sidebar-footer .uptime { color: #909399; }
@@ -458,6 +471,7 @@ const handleLogout = async () => {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
     min-height: 0;
     overflow: hidden;
   }
