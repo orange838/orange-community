@@ -24,7 +24,7 @@ const routes = [
   { path: '/notice', component: Notice },
   { path: '/profile', component: Profile },
   { path: '/admin', component: Admin },
-  { path: '/oauth-callback', component: OAuthCallback }
+  { path: '/oauth-callback', component: OAuthCallback },
 ]
 
 const router = createRouter({

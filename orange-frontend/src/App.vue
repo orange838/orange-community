@@ -25,6 +25,20 @@
         <div class="uptime">本站已运行 {{ uptimeText }}</div>
         <a href="https://qm.qq.com/q/J1lkB9JoWc" target="_blank" rel="noopener">💬 加入 QQ 交流群</a>
         <a href="https://github.com/orange838/orange-community" target="_blank" rel="noopener">GitHub 仓库</a>
+        <div class="switch-row">
+          <span class="switch-side" :class="{ on: styleMode === 'classic' }">兼容</span>
+          <button
+            type="button"
+            class="switch"
+            role="switch"
+            :aria-checked="styleMode === 'glass'"
+            aria-label="切换新版亚克力 / 兼容纯色样式"
+            @click="toggleStyleMode"
+          >
+            <span class="knob" :class="{ right: styleMode === 'glass' }"></span>
+          </button>
+          <span class="switch-side" :class="{ on: styleMode === 'glass' }">新版</span>
+        </div>
       </div>
     </aside>
 
@@ -83,12 +97,16 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import Toast from './components/Toast.vue' // 引入 Toast
 import { currentUser } from './store'
 import { useRoute, useRouter } from 'vue-router'
+import { useStyleMode } from './composables/useStyleMode'
 
 const toastRef = ref(null) // 获取 Toast 组件实例
 const router = useRouter()
 const route = useRoute()
 // 这些页面单独整页显示，不套左侧栏 / 顶栏 / 页脚
 const BARE_PAGES = ['/login', '/captcha']
+
+// ---- 样式模式：glass（新版亚克力）/ classic（兼容纯色），存 localStorage ----
+const { styleMode, toggle: toggleStyleMode } = useStyleMode()
 const isBarePage = computed(() => BARE_PAGES.includes(route.path))
 const isAdminRole = (role) => role === 'admin' || role === 'super_admin'
 let appMounted = false
@@ -467,6 +485,34 @@ const handleLogout = async () => {
 .sidebar-footer .uptime { color: #909399; }
 .sidebar-footer a { color: #ff9900; text-decoration: none; }
 .sidebar-footer a:hover { text-decoration: underline; }
+.switch-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.switch-side { font-size: 12px; color: #a8abb2; transition: color 0.2s; white-space: nowrap; }
+.switch-side.on { color: #ff9900; font-weight: 600; }
+.switch {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex: none;
+  border: none;
+  border-radius: 13px;
+  background: #d9dee7;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.25s;
+}
+.switch[aria-checked='true'] { background: #ff9900; }
+.knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.25s;
+}
+.knob.right { transform: translateX(20px); }
 @media (max-width: 768px) {
   .app-container {
     display: flex;
