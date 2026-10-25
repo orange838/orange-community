@@ -32,9 +32,9 @@ body {
 :root {
   --glass-blur: 18px;
   --glass-sat: 165%;
-  --glass-alpha: 0.62;
-  --glass-alpha-strong: 0.78;
-  --glass-alpha-card: 0.74;
+  --glass-alpha: 0.5;
+  --glass-alpha-strong: 0.72;
+  --glass-alpha-card: 0.52;
   --glass-stroke: rgba(255, 255, 255, 0.65);
   --glass-shadow: 0 10px 30px rgba(31, 45, 61, 0.1);
 }
@@ -47,10 +47,14 @@ html.style-glass body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(900px 620px at 12% 8%, rgba(255, 153, 0, 0.3), transparent 62%),
-    radial-gradient(720px 520px at 88% 4%, rgba(255, 102, 0, 0.18), transparent 60%),
-    radial-gradient(900px 700px at 76% 92%, rgba(80, 140, 255, 0.16), transparent 62%),
-    linear-gradient(160deg, #f7f8fa 0%, #eef1f6 55%, #e9eef7 100%);
+    radial-gradient(760px 560px at 8% 4%, rgba(255, 152, 0, 0.46), transparent 60%),
+    radial-gradient(680px 520px at 92% 2%, rgba(255, 94, 58, 0.3), transparent 58%),
+    radial-gradient(820px 620px at 96% 88%, rgba(64, 128, 255, 0.32), transparent 62%),
+    radial-gradient(700px 560px at 4% 96%, rgba(0, 194, 199, 0.2), transparent 60%),
+    radial-gradient(620px 420px at 62% 26%, rgba(255, 176, 84, 0.34), transparent 66%),
+    radial-gradient(560px 420px at 34% 72%, rgba(120, 160, 255, 0.26), transparent 66%),
+    radial-gradient(900px 700px at 50% 50%, rgba(255, 214, 153, 0.35), transparent 70%),
+    linear-gradient(155deg, #f4f7fc 0%, #eaf0f9 45%, #e7ecf7 100%);
 }
 
 /* 极细噪点：亚克力质感的"颗粒感"来源，很淡但差别很明显 */
@@ -60,7 +64,7 @@ html.style-glass body::after {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.26;
+  opacity: 0.34;
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
 }
@@ -87,20 +91,22 @@ html.style-glass .site-footer {
 
 /* ---- 侧边栏 ---- */
 html.style-glass .app-container .sidebar {
-  background: rgba(255, 255, 255, var(--glass-alpha));
+  background-color: rgba(255, 255, 255, var(--glass-alpha));
+  background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0.3));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   border-right: 1px solid var(--glass-stroke);
-  box-shadow: var(--glass-shadow);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.9), var(--glass-shadow);
 }
 
 /* ---- 顶栏 ---- */
 html.style-glass .app-container .top-header {
-  background: rgba(255, 255, 255, var(--glass-alpha));
+  background-color: rgba(255, 255, 255, var(--glass-alpha));
+  background-image: linear-gradient(120deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.04) 60%, rgba(255, 255, 255, 0.28));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   border-bottom: 1px solid var(--glass-stroke);
-  box-shadow: 0 6px 20px rgba(31, 45, 61, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 6px 20px rgba(31, 45, 61, 0.07);
 }
 
 /* ---- 导航选中态：橙色也带一点透 ---- */
@@ -119,12 +125,29 @@ html.style-glass .content-area .task-list-wrap,
 html.style-glass .content-area .profile-card,
 html.style-glass .content-area .admin-card,
 html.style-glass .content-area .orange-log-card,
-html.style-glass .content-area .promotion-card {
-  background: rgba(255, 255, 255, var(--glass-alpha-card));
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
-  border: 1px solid var(--glass-stroke);
-  box-shadow: 0 8px 24px rgba(31, 45, 61, 0.07);
+html.style-glass .content-area .promotion-card,
+html.style-glass .content-area .admin-header,
+html.style-glass .content-area .admin-tabs,
+html.style-glass .content-area .invite-code,
+html.style-glass .content-area .ban-modal {
+  background-color: rgba(255, 255, 255, var(--glass-alpha-card));
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.06) 42%, rgba(255, 255, 255, 0.34));
+  -webkit-backdrop-filter: blur(22px) saturate(185%);
+  backdrop-filter: blur(22px) saturate(185%);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(255, 255, 255, 0.35), 0 12px 32px rgba(31, 45, 61, 0.11);
+}
+
+/* 卡片里的输入框、表格、次级按钮也跟着透，避免玻璃中间嵌一块死白 */
+html.style-glass .content-area input,
+html.style-glass .content-area textarea,
+html.style-glass .content-area select {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.75);
+}
+
+html.style-glass .content-area .task-list td {
+  background: transparent;
 }
 
 /* 表格表头跟着透一点，避免卡片里一块死白 */
@@ -149,6 +172,32 @@ html.style-glass .bare-shell .page-card {
 }
 
 /* 浏览器不支持毛玻璃时，即使被强制切到 glass 也不会变成一片模糊方块 */
+/* ---- 浮层：Toast、确认框 ---- */
+html.style-glass .toast-box,
+html.style-glass .confirm-box {
+  background: rgba(255, 255, 255, 0.7);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 16px 44px rgba(31, 45, 61, 0.18);
+}
+
+/* ---- 登录页：标签按钮、第三方登录按钮 ---- */
+html.style-glass .bare-shell .login-tabs button,
+html.style-glass .bare-shell .github-btn,
+html.style-glass .bare-shell input {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+/* ---- OAuth 回调页 ---- */
+html.style-glass .box {
+  background: rgba(255, 255, 255, 0.68);
+  -webkit-backdrop-filter: blur(20px) saturate(175%);
+  backdrop-filter: blur(20px) saturate(175%);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+}
+
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   html.style-glass .app-container .sidebar,
   html.style-glass .app-container .top-header,
