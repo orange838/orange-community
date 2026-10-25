@@ -31,6 +31,13 @@
 
 ## 最近交接记录
 
+### 2026-10-25 — 抓娃娃验证码中文化
+- 新增 `src/components/playcaptcha-local.js`：从 `playcaptcha@0.1.0` 的 `dist/index.js` 复制，仅替换界面文案（标题、步骤、按钮、提示、错误提示、帮助弹窗、玩具名称），逻辑与画布代码未改。
+- `PlayCaptcha.vue` 改为从本地副本导入（CSS 仍用 `src/assets/clawcaptcha.css`）；npm 包保留在依赖里备用。
+- 升级 `playcaptcha` 时需重新对照 dist 打补丁，**不要直接覆盖本地文件**，否则文案会退回英文。
+- 实测：`/captcha` 全部文案为中文，排版无溢出；线上 bundle 已含中文（`index-DUJ9nvya.js`）。
+- commit `2544266`，已推送并部署。
+
 ### 2026-10-25 — 推送方式改为本机专用 SSH 密钥（不再需要人工 push）
 - 背景：主站与错题本仓库此前的 push 依赖用户本机 `~/.ssh`，而 Agent 运行身份读不到该目录，导致每次都要用户手动 push。
 - 现在：本仓库 `.ssh/lingxi_ed25519`（已在 `.gitignore`，**绝不入库**）为该机器专用密钥，用户已在 GitHub 账号里登记为 `lingxi-agent`。
