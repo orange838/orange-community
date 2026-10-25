@@ -6,7 +6,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { ClawCaptcha } from 'playcaptcha'
+// 本地中文化版本：基于 playcaptcha@0.1.0 的 dist，仅替换界面文案
+import { ClawCaptcha } from './playcaptcha-local.js'
 import '../assets/clawcaptcha.css'
 
 const props = defineProps({
