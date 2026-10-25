@@ -776,7 +776,7 @@ const handleSubmit = async () => {
 
 .submit-btn { width: 100%; padding: 12px; background-color: #ff9900; color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; margin-top: 10px; }
 .submit-btn:hover:not(:disabled) { background-color: #e68a00; }
-.submit-btn:disabled { background-color: #ffb84d; cursor: not-allowed; }
+.submit-btn:disabled { background-color: #f2f3f5; color: #a8abb2; cursor: not-allowed; }
 
 .github-login { margin-top: 16px; }
 .divider { display: flex; align-items: center; gap: 12px; color: #c0c4cc; font-size: 13px; margin-bottom: 14px; }
