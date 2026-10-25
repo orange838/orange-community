@@ -23,3 +23,160 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* ============================================================
+   亚克力 / 毛玻璃主题（html.style-glass）
+   兼容模式（html.style-classic）不写任何覆盖，保持纯色原样
+   ============================================================ */
+
+:root {
+  --glass-blur: 18px;
+  --glass-sat: 165%;
+  --glass-alpha: 0.62;
+  --glass-alpha-strong: 0.78;
+  --glass-alpha-card: 0.74;
+  --glass-stroke: rgba(255, 255, 255, 0.65);
+  --glass-shadow: 0 10px 30px rgba(31, 45, 61, 0.1);
+}
+
+/* 背景：固定不动的渐变光斑（不随内容滚动，毛玻璃才有东西可糊） */
+html.style-glass body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 620px at 12% 8%, rgba(255, 153, 0, 0.3), transparent 62%),
+    radial-gradient(720px 520px at 88% 4%, rgba(255, 102, 0, 0.18), transparent 60%),
+    radial-gradient(900px 700px at 76% 92%, rgba(80, 140, 255, 0.16), transparent 62%),
+    linear-gradient(160deg, #f7f8fa 0%, #eef1f6 55%, #e9eef7 100%);
+}
+
+/* 极细噪点：亚克力质感的"颗粒感"来源，很淡但差别很明显 */
+html.style-glass body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.26;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+
+/* 内容层压在背景之上 */
+#app {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- 容器：让出背景，交给半透明面板 ---- */
+html.style-glass .app-container,
+html.style-glass .bare-shell {
+  background-color: transparent;
+}
+
+html.style-glass .content-area {
+  background-color: transparent;
+}
+
+html.style-glass .site-footer {
+  background-color: transparent;
+}
+
+/* ---- 侧边栏 ---- */
+html.style-glass .app-container .sidebar {
+  background: rgba(255, 255, 255, var(--glass-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-right: 1px solid var(--glass-stroke);
+  box-shadow: var(--glass-shadow);
+}
+
+/* ---- 顶栏 ---- */
+html.style-glass .app-container .top-header {
+  background: rgba(255, 255, 255, var(--glass-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-bottom: 1px solid var(--glass-stroke);
+  box-shadow: 0 6px 20px rgba(31, 45, 61, 0.06);
+}
+
+/* ---- 导航选中态：橙色也带一点透 ---- */
+html.style-glass .app-container .nav-menu li a:hover,
+html.style-glass .app-container .nav-menu li a.active {
+  background-color: rgba(255, 153, 0, 0.14);
+}
+
+/* ---- 内容卡片（全站）---- */
+html.style-glass .content-area .welcome-card,
+html.style-glass .content-area .notice-card,
+html.style-glass .content-area .post-form-card,
+html.style-glass .content-area .post-item,
+html.style-glass .content-area .post-skeleton,
+html.style-glass .content-area .task-list-wrap,
+html.style-glass .content-area .profile-card,
+html.style-glass .content-area .admin-card,
+html.style-glass .content-area .orange-log-card,
+html.style-glass .content-area .promotion-card {
+  background: rgba(255, 255, 255, var(--glass-alpha-card));
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: 0 8px 24px rgba(31, 45, 61, 0.07);
+}
+
+/* 表格表头跟着透一点，避免卡片里一块死白 */
+html.style-glass .content-area .task-list th {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+/* ---- 消息面板 ---- */
+html.style-glass .app-container .msg-panel {
+  background: rgba(255, 255, 255, var(--glass-alpha-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-stroke);
+}
+
+/* ---- 登录卡片：也做成玻璃，但保持足够不透明度保证可读 ---- */
+html.style-glass .bare-shell .page-card {
+  background: rgba(255, 255, 255, 0.82);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-stroke);
+}
+
+/* 浏览器不支持毛玻璃时，即使被强制切到 glass 也不会变成一片模糊方块 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html.style-glass .app-container .sidebar,
+  html.style-glass .app-container .top-header,
+  html.style-glass .bare-shell .page-card,
+  html.style-glass .content-area .welcome-card,
+  html.style-glass .content-area .notice-card,
+  html.style-glass .content-area .post-form-card,
+  html.style-glass .content-area .post-item,
+  html.style-glass .content-area .post-skeleton,
+  html.style-glass .content-area .task-list-wrap,
+  html.style-glass .content-area .profile-card,
+  html.style-glass .content-area .admin-card,
+  html.style-glass .content-area .orange-log-card,
+  html.style-glass .content-area .promotion-card {
+    background: rgba(255, 255, 255, 0.94);
+  }
+  html.style-glass body::after {
+    opacity: 0.12;
+  }
+}
+
+/* 系统开启"减少动态模糊"偏好时，降级为高不透明度 */
+@media (prefers-reduced-transparency: reduce) {
+  html.style-glass .app-container .sidebar,
+  html.style-glass .app-container .top-header,
+  html.style-glass .bare-shell .page-card {
+    background: rgba(255, 255, 255, 0.95);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

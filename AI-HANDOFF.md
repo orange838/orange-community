@@ -15,6 +15,7 @@
 ## 最近同步点
 
 - 最近同步的后端代码提交：`ae7e990`（2026-10-20，本地 FastAPI 与生产 Worker API 对齐）。
+- 最近同步的前端提交：`0a34d94`（2026-10-25，修复页面级滚动条、登录/注册改独立整页、表单草稿恢复加固）。
 - 在继续任务前，检查从该提交到当前 HEAD 的提交，以及所有未提交修改。
 - `build-guide.js` 和 `橙子社区类项目搭建指南.docx` 在最近检查时是未跟踪的用户文件；除非用户明确要求，不要编辑、删除或纳入提交。
 - `ae7e990` 已提交；推送前需检查当前 `main` 与 `origin/main` 的 ahead/behind 状态。账号封禁/超级管理员相关代码已在当前历史中，生产 D1 的封禁字段迁移状态需以数据库实际状态确认。
@@ -30,6 +31,36 @@
 
 ## 最近交接记录
 
+### 2026-10-25 — 亚克力毛玻璃主题 + 样式开关
+- 新增 `src/composables/useStyleMode.js`（模块级共享 ref），`html.style-glass` / `html.style-classic` 两个根类控制主题；选择写入 `localStorage.site_style`，`index.html` 内联脚本在首屏渲染前打类，避免刷新闪烁；不支持 `backdrop-filter` 时自动降级为 `classic`。
+- **默认 classic（兼容纯色）**，和改造前完全一致；用户主动开开关才进 glass。
+- 侧边栏底部新增开关控件（兼容 / 圆点 / 新版），`role="switch"` + `aria-checked`；原「文字按钮」方案已删除，演示页 `/style-demo` 也已删除。
+- glass 主题：`body::before` 固定渐变光斑 + `body::after` SVG 噪点（`mix-blend-mode: overlay`，opacity .26）；侧栏、顶栏、消息面板、内容卡片、登录卡片全部 `backdrop-filter: blur()` 半透明，内容卡片 alpha .74 保证可读；`prefers-reduced-transparency` 与 `@supports not` 双重降级。
+- 实测（headless，1280×860）：切换后 `html.style-glass`、`aria-checked`、`localStorage` 三者一致；页面高度 860/860 无滚动条。
+- commit `1f7ef91`，待推送。
+
+### 2026-10-25 — 侧边栏新增 QQ 交流群入口
+- `.sidebar-footer` 在「GitHub 仓库」上方新增一条外链：`https://qm.qq.com/q/J1lkB9JoWc`，显示文案「💬 加入 QQ 交流群」；页面级滚动条仍为 0（1280×800 与 390×844 实测 doc 高度相等）。
+- commit `5ba2280`，待推送部署。
+
+### 2026-10-25 — 修复页面级滚动条 + 登录/注册独立整页 + 表单草稿恢复
+- **滚动条根因**：`src/style.css` 从未被 `main.js` 引入，`html/body` 一直带着浏览器默认 8px 外边距，而 `.app-container` 为 `height:100vh`，整页多出 16px → 页面级滚动条。
+  - 已在 `main.js` 引入 `style.css`，并把 `html, body` 设为 `margin:0; height:100%; overflow:hidden`、`#app` 铺满、统一 `box-sizing:border-box`。
+  - `.app-container` 增加 `overflow:hidden` 与 `100dvh` 兜底；`.main-wrapper` 补 `min-width/min-height:0`；顶栏与页脚 `flex:none`，保证只有 `.content-area` 内部滚动。
+- **登录/注册、人机验证改独立整页**：`/login`、`/captcha` 不再套在侧边栏/顶栏/页脚里（App.vue 新增 `isBarePage` + `.bare-shell`，Toast 移到最外层保证任何页面可用）。登录页卡片居中、加了"← 返回首页"，页面模式压缩了间距避免内容区滚动。
+- **娃娃机移动端横向溢出**：`.play-captcha-wrap` 原为固定 440px 内容宽度，在 390px 视口溢出；改为 `width:100%;max-width:440px` + `:deep(.clawcap){width:100%}`，`/captcha` 加 `overflow-x:hidden`。
+- **表单草稿恢复加固**：`sessionStorage` 草稿抽取为 `saveDraft/restoreDraft`，跳 `/captcha` 前与组件卸载时（仅当前路由为 `/captcha`）各存一次，`onMounted` 最先恢复；登录成功后清除草稿，避免残留凭据。
+- **邀请/拉新链接**：App.vue 原 `openModal(false)`（函数已删，运行时报错）改为带 `invite/ref` 参数跳 `/login?mode=register`；`getQueryParam` 优先读 hash 路由 query，兼容 `window.location.search`。
+- 实测（headless Chrome，1280×800 / 1280×720 / 390×844）：三档下 `documentElement.scrollHeight == clientHeight`，首页/登录页无页面滚动条；`/login` 独立页无 `.content-area`；填邮箱→获取验证码→`/captcha`→返回后邮箱、登录方式均恢复；390 宽 `/captcha` 无横向溢出。
+- commit `0a34d94` 已 push 并部署完成（线上 bundle 含 `.bare-shell` / `back-home`）。
+- 遗留：PlayCaptcha 组件文案仍是英文（中文化选了方案 A，尚未替换）；`src/components/playcaptcha-local.js` 为未启用的本地副本，未纳入提交。
+
+### 2026-10-21 — 登录/注册改为独立页面（删除登录弹窗）
+- LoginModal 新增 `mode`（modal 默认 | page）：page 模式无遮罩/无关闭按钮，登录成功返回上页或首页。
+- 新建 `view/LoginPage.vue` + 路由 `/login`，同页内登录/注册切换（URL `?mode=login|register`）。
+- App.vue 删除登录弹窗与 `openModal`，顶部"登录/注册"按钮、SSO 未登录、`open-login-modal` 事件均改跳转 `/login`；Posts.vue `goLogin` 也改跳转。
+- 获取验证码的 PlayCaptcha 检查仅在点"获取验证码"时触发，跳 `/captcha` 验证后返回。
+- commit `d55f6ac` 已 push，待浏览器验证。
 ### 2026-10-20 — 同步本地 FastAPI 与线上 Worker 后端
 - `orange-backend/main.py` 补齐 Worker 的 `/api/status`、拉新码/归因与奖励、橙子流水、帖子、站内消息、封禁状态与管理接口，并保持邮件验证码尝试限制、密码强度和 Turnstile 动作/主机名校验。
 - SQLite 启动迁移新增帖子、消息、推荐奖励、橙子流水和封禁字段；奖励由幂等唯一约束及触发器发放；删除旧拉新码别名表，旧码不再可用。
