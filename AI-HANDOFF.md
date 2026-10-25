@@ -31,6 +31,12 @@
 
 ## 最近交接记录
 
+### 2026-10-25 — 许可证改为 PolyForm Noncommercial + 附加许可
+- `LICENSE` 由自写的「橙子社区非商业使用许可」替换为：**PolyForm Noncommercial License 1.0.0 官方原文（未改）** + 第 2 部分额外许可 + 第 3 部分署名 + 第 4 部分免责。
+- 关键规则：非商业自由使用/修改/分发且**不强制开源**；商业只能「公开修改版源码」或「书面商业授权」二选一；**署名必须保留**，只有商业授权明确约定时才可移除；PolyForm 原文的「非商业组织无条件可用」被 2.4 条收紧为按实际用途判断。
+- 新增 `NOTICE`（Required Notice 行 + 许可摘要 + 授权邮箱 `admin@cslblog.dpdns.org`）；`README.md` / `README.zh_CN.md` 的许可段同步重写；`.gitignore` 增加 `.tmp-test/`。
+- commit `415251c`，待推送。
+
 ### 2026-10-25 — 亚克力毛玻璃主题 + 样式开关
 - 新增 `src/composables/useStyleMode.js`（模块级共享 ref），`html.style-glass` / `html.style-classic` 两个根类控制主题；选择写入 `localStorage.site_style`，`index.html` 内联脚本在首屏渲染前打类，避免刷新闪烁；不支持 `backdrop-filter` 时自动降级为 `classic`。
 - **默认 classic（兼容纯色）**，和改造前完全一致；用户主动开开关才进 glass。

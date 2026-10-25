@@ -1,59 +1,229 @@
-Orange Community Non-Commercial License
-Version 1.0, 2026
+橙子社区许可 / Orange Community License
+版本 1.0，2026
 
 Copyright (c) 2026 CSL
-All rights reserved except for the permissions expressly granted below.
+Required Notice: Copyright (c) 2026 CSL — Orange Community（橙子社区）
+仓库：https://github.com/orange838/orange-community
+商业授权联系：admin@cslblog.dpdns.org
 
-1. Definitions
+本软件以 PolyForm Noncommercial License 1.0.0 授权（官方原文见「第 1 部分」，未作修改），
+并附加「第 2 部分：额外许可」与「第 3 部分：署名」。
 
-"Software" means this repository's source code, documentation, and other
-materials, excluding third-party components that are identified as being
-distributed under their own licenses.
+第 2、3 部分是本许可的组成部分，由版权持有人额外授予或明示限制。
+如第 2、3 部分与第 1 部分存在不一致，以第 2、3 部分为准。
 
-"Commercial Use" means use primarily intended for or directed toward
-commercial advantage or monetary compensation. Commercial Use includes,
-without limitation:
+---
 
-- incorporating the Software into a product or service offered for payment;
-- operating the Software as a paid or revenue-generating hosted service;
-- using the Software to provide services to customers or clients; or
-- using the Software within the operations of a for-profit organization.
+# 第 2 部分：额外许可与明示限制（Additional Permissions and Restrictions）
 
-2. Non-commercial permission
+## 2.1 非商业用途：自由使用
 
-Subject to this license, the copyright holder grants you a worldwide,
-non-exclusive, royalty-free, revocable license to use, study, and modify the
-Software for personal, educational, research, or other non-commercial purposes.
-You may share unmodified copies for non-commercial purposes if you include this
-license and retain all applicable copyright and attribution notices.
+任何**非商业目的**的使用，均获得免费、不可撤销的许可，包括：
 
-You may not distribute modified versions of the Software without prior written
-permission from the copyright holder.
+- 使用、运行、部署；
+- 修改、创作衍生作品；
+- 分发原件或修改版（含以修改版提供服务）。
 
-3. Commercial permission required
+上述使用**不要求公开你的修改版源码**，不要求支付费用，但必须遵守第 3 部分署名要求，
+以及第 1 部分关于许可文本与 Required Notice 的传递义务。
 
-Commercial Use is not granted by this license. You must obtain prior written
-authorization and any separate commercial license from the copyright holder
-before engaging in Commercial Use.
+「非商业目的」指不以获取商业利益或金钱报酬为目的的使用，例如个人学习、研究、
+兴趣项目、教学演示、非营利的公益展示等。
 
-4. Restrictions
+## 2.2 商业用途：二选一
 
-You may not remove or obscure copyright, attribution, or license notices. No
-trademark rights are granted. Any rights not expressly granted in this license
-are reserved by the copyright holder.
+任何**商业目的**的使用（包括但不限于：集成进收费产品或服务、作为收费托管服务提供、
+在营利性组织的业务中使用、用于引流变现），仅可通过下列两种方式之一获得授权：
 
-5. Termination
+**(a) 公开源码方案**
+将你分发、部署或对外提供的修改版（含全部改动）以本许可（PolyForm Noncommercial
+License 1.0.0 + 本附加条款）公开，并保留第 3 部分要求的署名。满足该条件即视为已获得
+商业使用许可，无需另行付费。
 
-This license terminates automatically if you violate its terms. Upon
-termination, you must stop using and sharing the Software.
+**(b) 商业授权方案**
+向版权持有人取得书面商业授权。授权范围、费用、期限、是否允许闭源、是否允许移除
+署名，由双方另行协商确定。
 
-6. Disclaimer
+## 2.3 未取得商业授权、也未按 2.2(a) 公开源码的商业使用，不在本许可授权范围内，
+属于对版权的侵犯。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING
-FROM THE SOFTWARE OR ITS USE.
+## 2.4 关于「非商业组织」条款的明示限制
 
-For commercial licensing inquiries, contact the copyright holder through the
-contact information published in the project repository.
+第 1 部分「Noncommercial Organizations」一段所授予的许可，**仅在本许可 2.1 条定义的
+非商业用途范围内适用**，不因使用者的组织性质（学校、公益组织、研究机构、政府机构等）
+而自动成立。
+
+判断标准是**实际用途**而非主体身份：上述组织将本软件用于其商业性活动、收费项目、
+以营利为目的的服务时，仍须按 2.2 条取得授权。
+
+## 2.5 商业授权联系方式
+
+- 邮箱：admin@cslblog.dpdns.org
+- GitHub：https://github.com/orange838/orange-community（Issue 或私信 @orange838）
+- QQ 交流群：https://qm.qq.com/q/J1lkB9JoWc
+
+正式授权请在联系时说明：使用主体、使用场景、是否闭源、预计规模。
+
+---
+
+# 第 3 部分：署名（Attribution）
+
+## 3.1 必须保留的署名
+
+任何复制、分发、部署或以其他方式向第三方提供本软件（含修改版）时，都必须保留：
+
+1. 源码与文档中的版权声明与 Required Notice 行（见 `NOTICE` 文件）；
+2. 对最终用户可见的归属标注。网站、应用类产品须在页脚或「关于」页展示，形式可参考：
+
+   `Powered by 橙子社区（Orange Community）— https://github.com/orange838/orange-community`
+
+若产品形态无法放置页脚（如命令行工具、库），须在文档、`--help` 输出或包描述中体现。
+
+## 3.2 唯一可以移除署名的情形
+
+仅在取得 2.2(b) 条书面商业授权，且该授权明确约定可以移除或替换署名时，
+方可移除或替换上述署名。其他任何情况下移除署名均属违约。
+
+---
+
+# 第 4 部分：免责声明
+
+在适用法律允许的最大范围内，本软件按「现状」提供，不附带任何明示或默示的保证，
+包括但不限于适销性、特定用途适用性与不侵权保证。版权持有人不对因使用本软件或
+本许可产生的任何索赔、损害或其他责任负责。
+
+---
+
+# 第 1 部分：PolyForm Noncommercial License 1.0.0（官方原文，未修改）
+
+# PolyForm Noncommercial License 1.0.0
+
+<https://polyformproject.org/licenses/noncommercial/1.0.0>
+
+## Acceptance
+
+In order to get any license under these terms, you must agree
+to them as both strict obligations and conditions to all
+your licenses.
+
+## Copyright License
+
+The licensor grants you a copyright license for the
+software to do everything you might do with the software
+that would otherwise infringe the licensor's copyright
+in it for any permitted purpose.  However, you may
+only distribute the software according to [Distribution
+License](#distribution-license) and make changes or new works
+based on the software according to [Changes and New Works
+License](#changes-and-new-works-license).
+
+## Distribution License
+
+The licensor grants you an additional copyright license
+to distribute copies of the software.  Your license
+to distribute covers distributing the software with
+changes and new works permitted by [Changes and New Works
+License](#changes-and-new-works-license).
+
+## Notices
+
+You must ensure that anyone who gets a copy of any part of
+the software from you also gets a copy of these terms or the
+URL for them above, as well as copies of any plain-text lines
+beginning with `Required Notice:` that the licensor provided
+with the software.  For example:
+
+> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
+
+## Changes and New Works License
+
+The licensor grants you an additional copyright license to
+make changes and new works based on the software for any
+permitted purpose.
+
+## Patent License
+
+The licensor grants you a patent license for the software that
+covers patent claims the licensor can license, or becomes able
+to license, that you would infringe by using the software.
+
+## Noncommercial Purposes
+
+Any noncommercial purpose is a permitted purpose.
+
+## Personal Uses
+
+Personal use for research, experiment, and testing for
+the benefit of public knowledge, personal study, private
+entertainment, hobby projects, amateur pursuits, or religious
+observance, without any anticipated commercial application,
+is use for a permitted purpose.
+
+## Noncommercial Organizations
+
+Use by any charitable organization, educational institution,
+public research organization, public safety or health
+organization, environmental protection organization,
+or government institution is use for a permitted purpose
+regardless of the source of funding or obligations resulting
+from the funding.
+
+## Fair Use
+
+You may have "fair use" rights for the software under the
+law. These terms do not limit them.
+
+## No Other Rights
+
+These terms do not allow you to sublicense or transfer any of
+your licenses to anyone else, or prevent the licensor from
+granting licenses to anyone else.  These terms do not imply
+any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or
+contributes to infringement of any patent, your patent license
+for the software granted under these terms ends immediately. If
+your company makes such a claim, your patent license ends
+immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have
+violated any of these terms, or done anything with the software
+not covered by your licenses, your licenses can nonetheless
+continue if you come into full compliance with these terms,
+and take practical steps to correct past violations, within
+32 days of receiving notice.  Otherwise, all your licenses
+end immediately.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without
+any warranty or condition, and the licensor will not be liable
+to you for any damages arising out of these terms or the use
+or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these
+terms, and the **software** is the software the licensor makes
+available under these terms.
+
+**You** refers to the individual or entity agreeing to these
+terms.
+
+**Your company** is any legal entity, sole proprietorship,
+or other kind of organization that you work for, plus all
+organizations that have control over, are under the control of,
+or are under common control with that organization.  **Control**
+means ownership of substantially all the assets of an entity,
+or the power to direct its management and policies by vote,
+contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the
+software under these terms.
+
+**Use** means anything you do with the software requiring one
+of your licenses.

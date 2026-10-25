@@ -55,3 +55,6 @@ orange-backend/smoke_invite.py
 # 本地产物（测试截图/工具脚本，不入库）
 output/
 build-guide.js
+
+# 本地临时测试产物（浏览器截图 / 脚本 / 草稿）
+.tmp-test/

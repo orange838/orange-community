@@ -35,10 +35,20 @@ This is a personal project. Suggestions and issue reports are welcome.
 
 ## License
 
-This project is licensed under the **Orange Community Non-Commercial License** in [`LICENSE`](./LICENSE). It permits personal, educational, research, and other non-commercial use. Commercial use requires prior written authorization from the copyright holder. This is a custom source-available license, not GPLv3 or an OSI-approved open-source license. Distribution of modified versions also requires prior written permission.
+This project is licensed under the **Orange Community License**: the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
+(verbatim) plus additional permissions and an attribution requirement, set out in
+[`LICENSE`](./LICENSE). It is a source-available (fair source) license, not an
+OSI-approved open-source license.
 
-See the license file for the complete terms. Contact the author for commercial licensing at [REDACTED].
+- **Non-commercial use** — free to use, run, modify and distribute, including
+  modified versions, with **no obligation to publish your changes**.
+- **Commercial use** — two options: **(a)** publish your modified source under the
+  same license, or **(b)** obtain a written commercial license. Only a written
+  commercial license may allow removing the attribution.
+- **Attribution is mandatory** — keep the copyright notice and the visible
+  "Powered by Orange Community" credit described in [`NOTICE`](./NOTICE).
+- **Organizations** — schools, charities and government bodies are **not** granted
+  blanket permission; what counts is the actual purpose of use.
 
----
-
-> Built by CSL with the assistance of AI（由 CSL 在 AI 辅助下构建）
+Commercial licensing: admin@cslblog.dpdns.org
