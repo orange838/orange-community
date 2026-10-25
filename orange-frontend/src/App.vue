@@ -23,6 +23,7 @@
       <!-- 侧边栏底部：运行时长 + 仓库链接 -->
       <div class="sidebar-footer">
         <div class="uptime">本站已运行 {{ uptimeText }}</div>
+        <a href="https://qm.qq.com/q/J1lkB9JoWc" target="_blank" rel="noopener">💬 加入 QQ 交流群</a>
         <a href="https://github.com/orange838/orange-community" target="_blank" rel="noopener">GitHub 仓库</a>
       </div>
     </aside>
