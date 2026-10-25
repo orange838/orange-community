@@ -85,6 +85,11 @@ html.style-glass .content-area {
   background-color: transparent;
 }
 
+html.style-glass .login-page,
+html.style-glass .captcha-page {
+  background: transparent;
+}
+
 html.style-glass .site-footer {
   background-color: transparent;
 }
@@ -204,12 +209,21 @@ html.style-glass .confirm-box {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 16px 44px rgba(31, 45, 61, 0.18);
 }
 
-/* ---- 登录页：标签按钮、第三方登录按钮 ---- */
-html.style-glass .bare-shell .login-tabs button,
+/* ---- 登录页：只给"未选中"的标签做玻璃，选中态保留品牌橙 ---- */
+html.style-glass .bare-shell .login-tabs button:not(.active) {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.8);
+  color: #606266;
+}
+html.style-glass .bare-shell .login-tabs button.active {
+  background: #ff9900;
+  border-color: #ff9900;
+  color: #fff;
+}
 html.style-glass .bare-shell .github-btn,
 html.style-glass .bare-shell input {
-  background: rgba(255, 255, 255, 0.6);
-  border-color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(255, 255, 255, 0.82);
 }
 
 /* ---- OAuth 回调页 ---- */
