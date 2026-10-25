@@ -585,7 +585,7 @@ function ClawCaptcha({
               a.setOverTray(false);
               a.setTrayMode("no");
               a.setMessage(
-                `That\u2019s the ${TOY_META[pile[s.carried].toy].label}! Find the ${TOY_META[target].label}.`
+                `这是${TOY_META[pile[s.carried].toy].label}！请找${TOY_META[target].label}。`
               );
               nextStage("beat");
               a.setPhaseBoth("deny");
