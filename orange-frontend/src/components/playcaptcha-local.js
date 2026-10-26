@@ -804,7 +804,7 @@ function ClawCaptcha({
                       }
                     ),
                     /* @__PURE__ */ jsxs("div", { className: "clawcap-info-head", children: [
-                      /* @__PURE__ */ jsx("span", { className: "clawcap-info-tile", children: /* @__PURE__ */ jsx("img", { src: "/playcaptcha.svg", alt: "", "aria-hidden": "true" }) }),
+                      /* @__PURE__ */ jsx("span", { className: "clawcap-info-tile", children: /* @__PURE__ */ jsx("img", { src: "/playcaptcha.svg?v=2", alt: "", "aria-hidden": "true" }) }),
                       /* @__PURE__ */ jsxs("h4", { className: "clawcap-info-title", children: [
                         "抓娃娃验证 ",
                         /* @__PURE__ */ jsx("span", { className: "clawcap-info-ver", children: "v1" })
