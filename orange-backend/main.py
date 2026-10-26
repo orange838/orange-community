@@ -478,18 +478,60 @@ LEET_CHARACTER_CLASSES = {
     "t": "t7+",
 }
 
+# 词库来源：线上 Worker 使用 glin-profanity@3.3.0 的 english/chinese 默认词库
+# （415 + 293 词），本地导出为 profanity_words.json，与 PROFANITY_WORDS 里补充的
+# 中文网络缩写词合并使用，保证两侧过滤覆盖面一致。
+PROFANITY_IGNORE = {"逼"}  # 与线上 ignoreWords:["逼"] 对齐，避免"牛逼"被误伤
+
+
+def _load_profanity_words():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profanity_words.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return [], set()
+    en = [str(w) for w in data.get("en") or [] if str(w).strip()]
+    zh = [str(w) for w in data.get("zh") or [] if str(w).strip()]
+    ignore = {str(w) for w in data.get("ignore") or []} | PROFANITY_IGNORE
+    return en + zh, ignore
+
+
+PROFANITY_EXTRA, PROFANITY_IGNORE = _load_profanity_words()
+_PROFANITY_PATTERNS = None
+
+
+def _build_profanity_pattern(word: str):
+    """英文按词边界 + 形近替换匹配（避免 class/grass 子串误报）；中文直接子串匹配。"""
+    if word == "fuck":
+        return re.compile(r"(?<![A-Za-z])f[\W_]*u?[\W_]*c[\W_]*k(?![A-Za-z])", re.IGNORECASE)
+    if word.isascii():
+        if re.fullmatch(r"[A-Za-z0-9]+", word):
+            chars = [f"[{re.escape(LEET_CHARACTER_CLASSES.get(char, char))}]" for char in word]
+            return re.compile(r"(?<![A-Za-z])" + r"[\W_]*".join(chars) + r"(?![A-Za-z])", re.IGNORECASE)
+        return re.compile(r"(?<![A-Za-z])" + re.escape(word), re.IGNORECASE)
+    return re.compile(re.escape(word))
+
+
+def _profanity_patterns():
+    global _PROFANITY_PATTERNS
+    if _PROFANITY_PATTERNS is None:
+        words = {}
+        for word in (*PROFANITY_WORDS, *PROFANITY_EXTRA):
+            key = word.strip().lower()
+            if not key or key in PROFANITY_IGNORE:
+                continue
+            words.setdefault(key, None)
+        _PROFANITY_PATTERNS = [
+            (word, _build_profanity_pattern(word)) for word in sorted(words, key=len, reverse=True)
+        ]
+    return _PROFANITY_PATTERNS
+
+
 def filter_profanity(text: str):
     filtered = unicodedata.normalize("NFKC", text)
     found = []
-    for word in sorted(PROFANITY_WORDS, key=len, reverse=True):
-        if word == "fuck":
-            expression = r"(?<![A-Za-z])f[\W_]*u?[\W_]*c[\W_]*k(?![A-Za-z])"
-        elif word.isascii():
-            chars = [f"[{re.escape(LEET_CHARACTER_CLASSES.get(char, char))}]" for char in word]
-            expression = r"(?<![A-Za-z])" + r"[\W_]*".join(chars) + r"(?![A-Za-z])"
-        else:
-            expression = re.escape(word)
-        pattern = re.compile(expression, re.IGNORECASE)
+    for word, pattern in _profanity_patterns():
         if pattern.search(filtered):
             found.append(word)
             filtered = pattern.sub("***", filtered)
