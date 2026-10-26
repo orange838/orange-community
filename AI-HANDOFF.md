@@ -15,7 +15,7 @@
 ## 最近同步点
 
 - 最近同步的后端代码提交：`ae7e990`（2026-10-20，本地 FastAPI 与生产 Worker API 对齐）。
-- 最近同步的前端提交：`0a34d94`（2026-10-25，修复页面级滚动条、登录/注册改独立整页、表单草稿恢复加固）。
+- 最近同步的前端提交：`b30e9d0`（2026-10-25，娃娃机帮助弹窗 logo 加版本参数绕过旧 404 缓存）；该提交之前依次有玻璃主题 `f6e32ea`、许可证 `197d43f`、验证码中文化 `2544266`/`2c33331`、logo 补齐 `fcfa9d5`。
 - 在继续任务前，检查从该提交到当前 HEAD 的提交，以及所有未提交修改。
 - `build-guide.js` 和 `橙子社区类项目搭建指南.docx` 在最近检查时是未跟踪的用户文件；除非用户明确要求，不要编辑、删除或纳入提交。
 - `ae7e990` 已提交；推送前需检查当前 `main` 与 `origin/main` 的 ahead/behind 状态。账号封禁/超级管理员相关代码已在当前历史中，生产 D1 的封禁字段迁移状态需以数据库实际状态确认。
@@ -30,6 +30,12 @@
 - README 不应包含本地运行/部署方法，也不应包含 Cloudflare 部署说明。
 
 ## 最近交接记录
+
+### 2026-10-25 — 娃娃机帮助弹窗 logo 404 修复
+- 现象：`/captcha` 帮助弹窗顶部图标破图。根因是本地化副本里写死引用 `/playcaptcha.svg`，而文件只存在于 `public/playcaptcha/playcaptcha.svg`。
+- 处理：`public/playcaptcha.svg` 补齐一份（commit `fcfa9d5`）；线上该路径已返回 `200 image/svg+xml`，headless 实测 `naturalWidth=683`。
+- 用户强刷后仍见破图，判断是浏览器缓存了旧的 404 响应，故把 `playcaptcha-local.js` 里引用改成 `/playcaptcha.svg?v=2` 破坏缓存（commit `b30e9d0`）。
+- 后续图片有改动时同步递增 `?v=` 版本号；`public/` 根路径与 `public/playcaptcha/` 下各有一份，替换时保持一致。
 
 ### 2026-10-25 — 抓娃娃验证码中文化
 - 新增 `src/components/playcaptcha-local.js`：从 `playcaptcha@0.1.0` 的 `dist/index.js` 复制，仅替换界面文案（标题、步骤、按钮、提示、错误提示、帮助弹窗、玩具名称），逻辑与画布代码未改。
