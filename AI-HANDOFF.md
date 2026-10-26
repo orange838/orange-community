@@ -31,6 +31,13 @@
 
 ## 最近交接记录
 
+### 2026-10-26 — 本地 FastAPI 与线上 Worker 全量对账
+- 逐接口比对 33 个路由：路由集合、鉴权、密码哈希（`pbkdf2:sha256:100000`）、Turnstile（action + hostname 白名单 + Origin 一致）、验证码冷却 60s 与最多 5 次尝试、签到 +5 橙子 + 邀请人 +2、注册拉新 +10、封禁/禁言、帖子 80/5000 字限制、六位拉新码、弱密码提醒 —— 均一致。
+- 差异已修：本地原先只有 40 个硬编码敏感词，线上用 `glin-profanity` 全词库。新增 `orange-worker/scripts/export-profanity-words.mjs` 从依赖包导出 english 415 + chinese 293 词到 `orange-backend/profanity_words.json`；`filter_profanity` 改为加载该词库并预编译正则，保留 `ignore:["逼"]` 对齐线上（“牛逼”不误伤）。
+- 升级 `glin-profanity` 后重跑导出脚本即可，不要手改 JSON。
+- 已知过度过滤（两侧一致，要改得同时改）：中文词库含“乳”“卵”等单字，`乳制品` 会被替换成 `***制品`。
+- 环境差异保留：`/api/status` 本地探测域名 + 读 SQLite + git HEAD，线上查 D1/Pages/GitHub；Turnstile 服务异常时本地返回具体原因，线上只返回失败。
+
 ### 2026-10-25 — 娃娃机帮助弹窗 logo 404 修复
 - 现象：`/captcha` 帮助弹窗顶部图标破图。根因是本地化副本里写死引用 `/playcaptcha.svg`，而文件只存在于 `public/playcaptcha/playcaptcha.svg`。
 - 处理：`public/playcaptcha.svg` 补齐一份（commit `fcfa9d5`）；线上该路径已返回 `200 image/svg+xml`，headless 实测 `naturalWidth=683`。
