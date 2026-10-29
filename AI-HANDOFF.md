@@ -15,7 +15,7 @@
 ## 最近同步点
 
 - 最近同步的后端代码提交：`ae7e990`（2026-10-20，本地 FastAPI 与生产 Worker API 对齐）。
-- 最近同步的前端提交：`b30e9d0`（2026-10-25，娃娃机帮助弹窗 logo 加版本参数绕过旧 404 缓存）；该提交之前依次有玻璃主题 `f6e32ea`、许可证 `197d43f`、验证码中文化 `2544266`/`2c33331`、logo 补齐 `fcfa9d5`。
+- 最近同步的前端提交：`392dbe4`（2026-10-29，新增推广链接分栏 + 页脚徽章飞入动画）；此前 `b30e9d0`（2026-10-25，娃娃机帮助弹窗 logo 加版本参数绕过旧 404 缓存）；该提交之前依次有玻璃主题 `f6e32ea`、许可证 `197d43f`、验证码中文化 `2544266`/`2c33331`、logo 补齐 `fcfa9d5`。
 - 在继续任务前，检查从该提交到当前 HEAD 的提交，以及所有未提交修改。
 - `build-guide.js` 和 `橙子社区类项目搭建指南.docx` 在最近检查时是未跟踪的用户文件；除非用户明确要求，不要编辑、删除或纳入提交。
 - `ae7e990` 已提交；推送前需检查当前 `main` 与 `origin/main` 的 ahead/behind 状态。账号封禁/超级管理员相关代码已在当前历史中，生产 D1 的封禁字段迁移状态需以数据库实际状态确认。
@@ -30,6 +30,13 @@
 - README 不应包含本地运行/部署方法，也不应包含 Cloudflare 部署说明。
 
 ## 最近交接记录
+
+### 2026-10-29 — 新增「推广链接」分栏 + 页脚徽章飞入动画
+- 侧栏在“公告”后新增 `/promo`「推广链接」，页面 `src/view/Promo.vue`。
+- 三张卡片：DigitalPlat FreeDomain、土豆公益（就是页脚那两个徽章），以及纵横铁路 `zhtl.cslblog.dpdns.org`（Minecraft 1.21.1 + NeoForge 21.1.x、v1.3.0、GPL-3.0，文案按站点实际内容写，不要随意编）。
+- 动画实现：共享元素花招。进入页面时量页脚 `[data-promo-badge]` 的 rect，把卡片先 translate+scale 到那个位置再回弹到原位，同时页脚淡出；`onBeforeUnmount` 全部复原。**仅 `html.style-glass` 生效**，兼容模式直接静态显示；另尊重 `prefers-reduced-motion`。
+- 页脚两个 `<a>` 已加 `data-promo-badge="digitalplat|tudou"` 和 `class="footer-badge"`，改页脚时别删，否则动画失去起点。
+- 实测：glass 中途帧矩阵有位移且页脚 opacity→0；classic 无 transform；390 宽无横向溢出；`npm run build` 通过。
 
 ### 2026-10-26 — 本地 FastAPI 与线上 Worker 全量对账
 - 逐接口比对 33 个路由：路由集合、鉴权、密码哈希（`pbkdf2:sha256:100000`）、Turnstile（action + hostname 白名单 + Origin 一致）、验证码冷却 60s 与最多 5 次尝试、签到 +5 橙子 + 邀请人 +2、注册拉新 +10、封禁/禁言、帖子 80/5000 字限制、六位拉新码、弱密码提醒 —— 均一致。
