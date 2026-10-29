@@ -13,6 +13,7 @@
         <li><router-link to="/posts" active-class="active">帖子广场</router-link></li>
         <li><router-link to="/tasks" active-class="active">任务中心</router-link></li>
         <li><router-link to="/notice" active-class="active">公告</router-link></li>
+        <li><router-link to="/promo" active-class="active">推广链接</router-link></li>
         <li><router-link to="/profile" active-class="active">个人中心</router-link></li>
         <li><a href="https://aeb.cslblog.dpdns.org" target="_blank" rel="noopener">AI错题本</a></li>
         <li v-if="isAdminRole(currentUser.info?.role)">
@@ -81,8 +82,8 @@
 
       <!-- 页脚：DigitalPlat FreeDomain 徽章 -->
       <footer class="site-footer" style="display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px;">
-        <a href="https://dashboard.digitalplat.org/signup?ref=AYxV65nOjF" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #d6dbe7;border-radius:12px;background:#ffffff;color:#0f172a;text-decoration:none;font:500 13px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;box-shadow:0 1px 2px rgba(15,23,42,0.06);"><span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;border-radius:9999px;background:#eff6ff;color:#1d4ed8;font:600 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;letter-spacing:0.02em;text-transform:uppercase;">DigitalPlat</span><span style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:600;">本网站由 DigitalPlat FreeDomain 提供支持</span><span style="color:#475569;">来 DigitalPlat 免费领取域名</span></span></a>
-        <a href="https://tudouai.cn/r/3n6bl5b" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #fde68a;border-radius:12px;background:#fffbeb;color:#78350f;text-decoration:none;font:500 13px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;box-shadow:0 1px 2px rgba(120,53,15,0.08);"><span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;border-radius:9999px;background:#fde68a;color:#92400e;font:600 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;letter-spacing:0.02em;text-transform:uppercase;">土豆公益</span><span style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:600;">邀请你注册土豆公益</span><span style="color:#92400e;">免费开游戏联机服务器</span></span></a>
+        <a data-promo-badge="digitalplat" class="footer-badge" href="https://dashboard.digitalplat.org/signup?ref=AYxV65nOjF" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #d6dbe7;border-radius:12px;background:#ffffff;color:#0f172a;text-decoration:none;font:500 13px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;box-shadow:0 1px 2px rgba(15,23,42,0.06);"><span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;border-radius:9999px;background:#eff6ff;color:#1d4ed8;font:600 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;letter-spacing:0.02em;text-transform:uppercase;">DigitalPlat</span><span style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:600;">本网站由 DigitalPlat FreeDomain 提供支持</span><span style="color:#475569;">来 DigitalPlat 免费领取域名</span></span></a>
+        <a data-promo-badge="tudou" class="footer-badge" href="https://tudouai.cn/r/3n6bl5b" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #fde68a;border-radius:12px;background:#fffbeb;color:#78350f;text-decoration:none;font:500 13px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;box-shadow:0 1px 2px rgba(120,53,15,0.08);"><span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;border-radius:9999px;background:#fde68a;color:#92400e;font:600 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;letter-spacing:0.02em;text-transform:uppercase;">土豆公益</span><span style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:600;">邀请你注册土豆公益</span><span style="color:#92400e;">免费开游戏联机服务器</span></span></a>
       </footer>
     </div>
 
@@ -479,6 +480,10 @@ const handleLogout = async () => {
 .msg-empty { padding: 24px; text-align: center; color: #909399; font-size: 13px; }
 .btn-logout:hover { background-color: #e05c5c; }
 .content-area { flex: 1; padding: 30px; overflow-y: auto; }
+.site-footer .footer-badge { transition: opacity 0.42s ease, transform 0.42s ease; }
+.site-footer .footer-badge.is-flown { opacity: 0; transform: translateY(-8px) scale(0.94); pointer-events: none; }
+.site-footer.is-flown-away { opacity: 0; transition: opacity 0.45s ease 0.1s; }
+
 .site-footer { flex: none; display: flex; justify-content: center; align-items: center; padding: 14px 20px 18px; background-color: #f5f7fa; }
 
 .sidebar-footer { margin-top: auto; padding: 14px 25px 18px; border-top: 1px solid #f0f2f5; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }

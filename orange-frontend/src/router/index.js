@@ -9,6 +9,7 @@ import PlayCaptchaPage from '../view/PlayCaptchaPage.vue'
 import LoginPage from '../view/LoginPage.vue'
 import Tasks from '../view/Tasks.vue'
 import Notice from '../view/Notice.vue'
+import Promo from '../view/Promo.vue'
 import Profile from '../view/Profile.vue'
 import Admin from '../view/Admin.vue'
 import OAuthCallback from '../view/OAuthCallback.vue'
@@ -22,6 +23,7 @@ const routes = [
   { path: '/tasks', component: Tasks },
   { path: '/checkin', redirect: '/tasks' },
   { path: '/notice', component: Notice },
+  { path: '/promo', component: Promo },
   { path: '/profile', component: Profile },
   { path: '/admin', component: Admin },
   { path: '/oauth-callback', component: OAuthCallback },
