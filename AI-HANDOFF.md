@@ -15,7 +15,7 @@
 ## 最近同步点
 
 - 最近同步的后端代码提交：`ae7e990`（2026-10-20，本地 FastAPI 与生产 Worker API 对齐）。
-- 最近同步的前端提交：`392dbe4`（2026-10-29，新增推广链接分栏 + 页脚徽章飞入动画）；此前 `b30e9d0`（2026-10-25，娃娃机帮助弹窗 logo 加版本参数绕过旧 404 缓存）；该提交之前依次有玻璃主题 `f6e32ea`、许可证 `197d43f`、验证码中文化 `2544266`/`2c33331`、logo 补齐 `fcfa9d5`。
+- 最近同步的前端提交：`428e585`（2026-10-31，登录统一提示 + 失败限流 + 安全响应头）；上一版 `392dbe4`（2026-10-29，新增推广链接分栏 + 页脚徽章飞入动画）；此前 `b30e9d0`（2026-10-25，娃娃机帮助弹窗 logo 加版本参数绕过旧 404 缓存）；该提交之前依次有玻璃主题 `f6e32ea`、许可证 `197d43f`、验证码中文化 `2544266`/`2c33331`、logo 补齐 `fcfa9d5`。
 - 在继续任务前，检查从该提交到当前 HEAD 的提交，以及所有未提交修改。
 - `build-guide.js` 和 `橙子社区类项目搭建指南.docx` 在最近检查时是未跟踪的用户文件；除非用户明确要求，不要编辑、删除或纳入提交。
 - `ae7e990` 已提交；推送前需检查当前 `main` 与 `origin/main` 的 ahead/behind 状态。账号封禁/超级管理员相关代码已在当前历史中，生产 D1 的封禁字段迁移状态需以数据库实际状态确认。
@@ -30,6 +30,15 @@
 - README 不应包含本地运行/部署方法，也不应包含 Cloudflare 部署说明。
 
 ## 最近交接记录
+
+### 2026-10-31 — 登录安全加固（对照《AI 写的登录页安全自查》海报）
+- 同提示防枚举：密码登录统一回“账号或密码错误”，验证码登录统一回“邮箱或验证码错误”；账号不存在时也跑一次 PBKDF2 假哈希（`DUMMY_PASSWORD_HASH`），避免响应耗时泄露账号是否存在。
+- 登录限流：新增 `login_attempts` 表（identifier + ip 主键），15 分钟内失败 5 次锁 15 分钟，返回 429 + `retry_after_minutes`；登录成功清计数。Worker 与本地 `main.py` 两边同步。
+- 踩过的坑：最初锁定后把 failures 写成 0，导致第 6 次请求又把锁解了；改成“累计值照存 + 只设 locked_until”。改这里时别再把计数归零。
+- 安全头：新增 `orange-frontend/public/_headers`（HSTS / X-Frame-Options DENY / Referrer-Policy / Permissions-Policy / CSP），Worker 的 cors() 里补 HSTS + nosniff，本地 FastAPI 加同名中间件。
+- CSP 不带 `'unsafe-inline'`：把 `index.html` 的首屏主题内联脚本拆到 `public/theme-init.js`；改回内联会直接触发 CSP 拦截、首屏主题失效。
+- XSS 现状：全站无 `v-html` / `innerHTML`，用户内容全走插值转义；但 token 仍存 localStorage（XSS 可直接窃取），改 HttpOnly Cookie 涉及跨域，尚未做。
+- 未改的例外：`/api/send-code?type=reset` 与 `/api/reset-password` 仍会回“该邮箱尚未注册”，属于另一种枚举口子；改成静默回“已发送”会影响“收不到验证码”的排查体验，待定。
 
 ### 2026-10-29 — 新增「推广链接」分栏 + 页脚徽章飞入动画
 - 侧栏在“公告”后新增 `/promo`「推广链接」，页面 `src/view/Promo.vue`。
