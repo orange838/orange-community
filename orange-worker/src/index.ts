@@ -255,6 +255,8 @@ const cors = (response: Response, request: Request) => {
     headers.set("Vary", "Origin");
   }
   headers.set("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   return new Response(response.body, { status: response.status, headers });
 };
@@ -353,6 +355,17 @@ const verificationEmailHtml = (type: string, code: string) => `
 const CODE_TTL_MS = 5 * 60_000;          // 验证码 5 分钟有效
 const SEND_CODE_COOLDOWN_MS = 60_000;    // 同一邮箱 60 秒内仅可发送一次
 const CODE_MAX_ATTEMPTS = 5;             // 验证码最多尝试 5 次
+const LOGIN_MAX_FAILURES = 5;             // 同一账号 + IP 在窗口内最多失败 5 次
+const LOGIN_WINDOW_MS = 15 * 60_000;      // 失败计数窗口 15 分钟
+const LOGIN_LOCK_MS = 15 * 60_000;        // 触发后锁定 15 分钟
+// 统一提示：不区分"账号不存在 / 密码错误"，避免被用来枚举站内账号
+const LOGIN_FAILED_MESSAGE = "账号或密码错误";
+const LOGIN_CODE_FAILED_MESSAGE = "邮箱或验证码错误";
+const LOGIN_LOCKED_MESSAGE = "登录失败次数过多，请 15 分钟后再试";
+// 账号不存在时也跑一次同样代价的哈希校验，避免通过响应耗时判断账号是否存在
+const DUMMY_PASSWORD_HASH =
+  "pbkdf2:sha256:100000$000102030405060708090a0b0c0d0e0f$" +
+  "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 const WEAK_PASSWORD_REMINDER =
   "你的密码不符合当前安全规则（至少 8 位，且同时包含大写字母、小写字母和数字）。建议尽快重置密码。此提醒不会限制账号使用。";
 const TOKEN_TTL_HOURS = 24 * 7;          // token 7 天有效
@@ -511,6 +524,62 @@ async function hashPassword(password: string) {
     256
   );
   return `pbkdf2:sha256:100000$${toHex(salt)}$${toHex(new Uint8Array(bits))}`;
+}
+
+// ---- 登录失败限流（D1，按 账号+IP 计次）----
+function clientIp(request: Request) {
+  return (
+    request.headers.get("CF-Connecting-IP") ||
+    (request.headers.get("X-Forwarded-For") || "").split(",")[0].trim() ||
+    "unknown"
+  );
+}
+
+async function ensureLoginAttemptsTable(db: D1Database) {
+  await db
+    .prepare(
+      "CREATE TABLE IF NOT EXISTS login_attempts (" +
+        "identifier TEXT NOT NULL, ip TEXT NOT NULL, failures INTEGER NOT NULL DEFAULT 0, " +
+        "first_failure_at TEXT NOT NULL, locked_until TEXT, PRIMARY KEY (identifier, ip))"
+    )
+    .run();
+}
+
+async function loginLockMinutes(db: D1Database, identifier: string, ip: string) {
+  const row = await db
+    .prepare("SELECT locked_until FROM login_attempts WHERE identifier = ? AND ip = ?")
+    .bind(identifier, ip)
+    .first<{ locked_until: string | null }>();
+  if (!row?.locked_until) return 0;
+  const until = Date.parse(row.locked_until);
+  if (!Number.isFinite(until) || until <= Date.now()) return 0;
+  return Math.max(1, Math.ceil((until - Date.now()) / 60_000));
+}
+
+async function recordLoginFailure(db: D1Database, identifier: string, ip: string) {
+  const now = Date.now();
+  const row = await db
+    .prepare("SELECT failures, first_failure_at FROM login_attempts WHERE identifier = ? AND ip = ?")
+    .bind(identifier, ip)
+    .first<{ failures: number; first_failure_at: string }>();
+  const firstAt = row?.first_failure_at ? Date.parse(row.first_failure_at) : NaN;
+  const inWindow = Number.isFinite(firstAt) && now - firstAt < LOGIN_WINDOW_MS;
+  const failures = (inWindow ? Number(row?.failures ?? 0) : 0) + 1;
+  const firstFailureAt = inWindow ? new Date(firstAt).toISOString() : new Date(now).toISOString();
+  const lockedUntil = failures >= LOGIN_MAX_FAILURES ? new Date(now + LOGIN_LOCK_MS).toISOString() : null;
+  await db
+    .prepare(
+      "INSERT INTO login_attempts (identifier, ip, failures, first_failure_at, locked_until) " +
+        "VALUES (?, ?, ?, ?, ?) " +
+        "ON CONFLICT(identifier, ip) DO UPDATE SET failures = excluded.failures, " +
+        "first_failure_at = excluded.first_failure_at, locked_until = excluded.locked_until"
+    )
+    .bind(identifier, ip, failures, firstFailureAt, lockedUntil)
+    .run();
+}
+
+async function clearLoginFailures(db: D1Database, identifier: string, ip: string) {
+  await db.prepare("DELETE FROM login_attempts WHERE identifier = ? AND ip = ?").bind(identifier, ip).run();
 }
 
 async function verifyPassword(stored: string, password: string) {
@@ -1353,15 +1422,37 @@ async function handle(request: Request, env: Env) {
       return json({ error: "不支持的登录方式" }, 400);
     }
 
+    // 限流前置检查：同一账号 + IP 连续失败过多时直接拒绝，避免暴力破解
+    const attemptId = String(loginMethod === "code" ? body.email ?? "" : body.account ?? "")
+      .trim()
+      .toLowerCase();
+    const ip = clientIp(request);
+    if (attemptId) {
+      try {
+        await ensureLoginAttemptsTable(env.DB);
+        const lockedFor = await loginLockMinutes(env.DB, attemptId, ip);
+        if (lockedFor) {
+          return json({ error: LOGIN_LOCKED_MESSAGE, retry_after_minutes: lockedFor }, 429);
+        }
+      } catch (e) {
+        // 限流表异常不能把登录整体打死，降级为放行并记录
+        console.error("[登录限流] 检查失败", e);
+      }
+    }
+
     if (loginMethod === "code") {
       const email = String(body.email ?? "");
       const code = String(body.code ?? "");
       if (!email || !code) return json({ error: "邮箱和验证码不能为空" }, 400);
       const user = await getUserByEmail(env.DB, email);
-      if (!user) return json({ error: "该邮箱未注册" }, 404);
-      const validCode = await validateCode(env.DB, email, code);
-      if (!validCode) return json({ error: "验证码错误或已过期" }, 400);
+      // 账号不存在与验证码错误返回同一提示，避免枚举账号
+      const validCode = user ? await validateCode(env.DB, email, code) : null;
+      if (!user || !validCode) {
+        await recordLoginFailure(env.DB, email.trim().toLowerCase(), ip).catch(() => {});
+        return json({ error: LOGIN_CODE_FAILED_MESSAGE }, 401);
+      }
       await env.DB.prepare("DELETE FROM codes WHERE id = ?").bind(validCode.id).run();
+      await clearLoginFailures(env.DB, email.trim().toLowerCase(), ip).catch(() => {});
       const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM checkin_records WHERE user_id = ?")
         .bind(user.id).first<{ count: number }>();
       const token = await createToken(env.SECRET_KEY, user.email, user.username, user.role ?? "user");
@@ -1378,8 +1469,15 @@ async function handle(request: Request, env: Env) {
     const password = String(body.password ?? "");
     if (!account || !password) return json({ error: "账号和密码不能为空" }, 400);
     const user = await getUserByIdentifier(env.DB, account);
-    if (!user) return json({ error: "用户不存在" }, 401);
-    if (!await verifyPassword(user.password, password)) return json({ error: "密码错误" }, 401);
+    // 账号不存在时也跑一次同代价的哈希校验：统一提示 + 统一耗时
+    const passwordOk = user
+      ? await verifyPassword(user.password, password)
+      : (await verifyPassword(DUMMY_PASSWORD_HASH, password), false);
+    if (!user || !passwordOk) {
+      await recordLoginFailure(env.DB, account.trim().toLowerCase(), ip).catch(() => {});
+      return json({ error: LOGIN_FAILED_MESSAGE }, 401);
+    }
+    await clearLoginFailures(env.DB, account.trim().toLowerCase(), ip).catch(() => {});
     // 仅密码登录能验证存量密码明文；验证码和 OAuth 登录不推断密码强度。
     const passwordUpdateReminder = !isStrongPassword(password);
     if (passwordUpdateReminder) {
