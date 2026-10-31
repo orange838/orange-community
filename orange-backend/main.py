@@ -47,6 +47,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """与线上 Worker 对齐的基础安全响应头。"""
+    response = await call_next(request)
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    return response
+
+
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 CF_SECRET_KEY = os.getenv("CF_TURNSTILE_SECRET_KEY")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
@@ -84,6 +93,19 @@ ALLOWED_TURNSTILE_HOSTNAMES = {
     "127.0.0.1",
 }
 
+# ---- 登录防爆破 / 防账号枚举（与线上 Worker 保持一致）----
+LOGIN_MAX_FAILURES = 5            # 同一账号 + IP 15 分钟内最多失败 5 次
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_LOCK_SECONDS = 15 * 60
+LOGIN_FAILED_MESSAGE = "账号或密码错误"
+LOGIN_CODE_FAILED_MESSAGE = "邮箱或验证码错误"
+LOGIN_LOCKED_MESSAGE = "登录失败次数过多，请 15 分钟后再试"
+# 账号不存在时也跑一次同代价的哈希校验，避免通过响应耗时判断账号是否存在
+DUMMY_PASSWORD_HASH = (
+    "pbkdf2:sha256:100000$000102030405060708090a0b0c0d0e0f$"
+    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+)
+
 # ============================================================
 # 密码哈希：与线上 worker 完全一致 pbkdf2:sha256:100000$saltHex$keyHex
 # ============================================================
@@ -91,6 +113,70 @@ def hash_password(password: str) -> str:
     salt = os.urandom(16)
     key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100000, dklen=32)
     return f"pbkdf2:sha256:100000${salt.hex()}${key.hex()}"
+
+def client_ip(request: Request) -> str:
+    forwarded = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def ensure_login_attempts(cursor) -> None:
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS login_attempts ("
+        "identifier TEXT NOT NULL, ip TEXT NOT NULL, failures INTEGER NOT NULL DEFAULT 0, "
+        "first_failure_at TEXT NOT NULL, locked_until TEXT, PRIMARY KEY (identifier, ip))"
+    )
+
+
+def _parse_iso(value: str):
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def login_lock_seconds(cursor, identifier: str, ip: str) -> int:
+    row = cursor.execute(
+        "SELECT locked_until FROM login_attempts WHERE identifier=? AND ip=?", (identifier, ip)
+    ).fetchone()
+    if not row or not row[0]:
+        return 0
+    until = _parse_iso(row[0])
+    if not until:
+        return 0
+    rest = int((until - datetime.now(timezone.utc)).total_seconds())
+    return rest if rest > 0 else 0
+
+
+def record_login_failure(cursor, identifier: str, ip: str) -> None:
+    now = datetime.now(timezone.utc)
+    row = cursor.execute(
+        "SELECT failures, first_failure_at FROM login_attempts WHERE identifier=? AND ip=?",
+        (identifier, ip),
+    ).fetchone()
+    first_at = _parse_iso(row[1]) if row and row[1] else None
+    in_window = bool(first_at and (now - first_at).total_seconds() < LOGIN_WINDOW_SECONDS)
+    failures = (int(row[0]) if (in_window and row) else 0) + 1
+    first_iso = (first_at if in_window and first_at else now).isoformat()
+    locked_until = (
+        (now + timedelta(seconds=LOGIN_LOCK_SECONDS)).isoformat()
+        if failures >= LOGIN_MAX_FAILURES
+        else None
+    )
+    cursor.execute(
+        "INSERT INTO login_attempts (identifier, ip, failures, first_failure_at, locked_until) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(identifier, ip) DO UPDATE SET failures=excluded.failures, "
+        "first_failure_at=excluded.first_failure_at, locked_until=excluded.locked_until",
+        (identifier, ip, failures, first_iso, locked_until),
+    )
+
+
+def clear_login_failures(cursor, identifier: str, ip: str) -> None:
+    cursor.execute("DELETE FROM login_attempts WHERE identifier=? AND ip=?", (identifier, ip))
+
 
 def verify_password(stored: str, password: str) -> bool:
     if not stored:
@@ -922,6 +1008,26 @@ async def login(request: Request):
     if login_method not in ("password", "code"):
         return JSONResponse({"error": "不支持的登录方式"}, status_code=400)
 
+    # 限流前置检查：同一账号 + IP 连续失败过多直接拒绝，避免暴力破解
+    ip = client_ip(request)
+    attempt_id = str(
+        data.get("email") if login_method == "code" else data.get("account") or ""
+    ).strip().lower()
+    if attempt_id:
+        try:
+            lock_conn = sqlite3.connect(DATABASE)
+            ensure_login_attempts(lock_conn.cursor())
+            locked_for = login_lock_seconds(lock_conn.cursor(), attempt_id, ip)
+            lock_conn.commit()
+            lock_conn.close()
+            if locked_for:
+                return JSONResponse(
+                    {"error": LOGIN_LOCKED_MESSAGE, "retry_after_minutes": max(1, locked_for // 60)},
+                    status_code=429,
+                )
+        except sqlite3.Error as error:
+            print(f"[登录限流] 检查失败：{error}")
+
     user = None
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
@@ -942,12 +1048,21 @@ async def login(request: Request):
                 "SELECT id, email, username, password, role, orange_balance FROM users WHERE username=?",
                 (account,),
             ).fetchone()
+        ensure_login_attempts(cursor)
         if not user:
+            # 账号不存在也跑一次同代价校验：统一提示 + 统一耗时
+            verify_password(DUMMY_PASSWORD_HASH, password)
+            record_login_failure(cursor, attempt_id, ip)
+            conn.commit()
             conn.close()
-            return JSONResponse({"error": "用户不存在"}, status_code=401)
+            return JSONResponse({"error": LOGIN_FAILED_MESSAGE}, status_code=401)
         if not verify_password(user[3], password):
+            record_login_failure(cursor, attempt_id, ip)
+            conn.commit()
             conn.close()
-            return JSONResponse({"error": "密码错误"}, status_code=401)
+            return JSONResponse({"error": LOGIN_FAILED_MESSAGE}, status_code=401)
+        clear_login_failures(cursor, attempt_id, ip)
+        conn.commit()
     else:  # code
         email = str(data.get("email") or "")
         code = str(data.get("code") or "")
@@ -958,13 +1073,15 @@ async def login(request: Request):
             "SELECT id, email, username, password, role, orange_balance FROM users WHERE email=?",
             (email,),
         ).fetchone()
-        if not user:
+        ensure_login_attempts(cursor)
+        # 账号不存在与验证码错误返回同一提示，避免枚举账号
+        code_row = validate_code(cursor, email, code) if user else None
+        if not user or not code_row:
+            record_login_failure(cursor, attempt_id, ip)
+            conn.commit()
             conn.close()
-            return JSONResponse({"error": "该邮箱未注册"}, status_code=404)
-        code_row = validate_code(cursor, email, code)
-        if not code_row:
-            conn.close()
-            return JSONResponse({"error": "验证码错误或已过期"}, status_code=400)
+            return JSONResponse({"error": LOGIN_CODE_FAILED_MESSAGE}, status_code=401)
+        clear_login_failures(cursor, attempt_id, ip)
         cursor.execute("UPDATE codes SET is_used=1 WHERE id=?", (code_row[0],))
         conn.commit()
     conn.close()
