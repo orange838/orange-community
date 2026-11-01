@@ -65,7 +65,7 @@ const promos = [
     flyFrom: '',
     tag: '麦块云',
     title: '邀请你注册麦块云：注册即送 10 鱼币',
-    desc: '签到领鱼币，兑换肥鱼会员即可调用 DeepSeek、GLM 大模型 API；一个账号还有云服务器、算力服务器。',
+    desc: '签到领鱼币，兑换肥鱼会员即可免费调用大模型 API。',
     meta: '手机号 + 短信验证码注册 · 通过邀请注册额外送 10 鱼币',
     href: 'https://minekuai.cn/r/A6YPDVZG'
   },
