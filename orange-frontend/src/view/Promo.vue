@@ -248,6 +248,19 @@ onBeforeUnmount(restore)
   color: #a8abb2;
 }
 
+.promo-foot a {
+  color: #ff9900;
+  text-decoration: none;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(255, 153, 0, 0.35);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.promo-foot a:hover {
+  color: #e68a00;
+  border-bottom-color: #e68a00;
+}
+
 @media (max-width: 640px) {
   .promo-card {
     padding: 13px 14px;
