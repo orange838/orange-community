@@ -2,7 +2,7 @@
   <div class="page-container">
     <h2>🔗 推广链接</h2>
     <p class="promo-intro">
-      这里放的是我在用的服务和作品，点进去看看。<template v-if="styleMode === 'glass'">前排两个就是页面底部那两个徽章，切进来的时候它们会自己飞上来。</template>
+      这里放的是我在用的服务和作品，点进去看看。
     </p>
 
     <div class="promo-list">
