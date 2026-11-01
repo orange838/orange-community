@@ -28,7 +28,10 @@
       </a>
     </div>
 
-    <p class="promo-foot">链接均为直达官方站点，不带中间跳转。有想互换友链的可以到个人中心联系我。</p>
+    <p class="promo-foot">
+      链接均为直达官方站点，不带中间跳转。想互换友链的话，
+      <a href="https://qm.qq.com/q/J1lkB9JoWc" target="_blank" rel="noopener noreferrer">加 QQ 交流群</a>找我。
+    </p>
   </div>
 </template>
 
