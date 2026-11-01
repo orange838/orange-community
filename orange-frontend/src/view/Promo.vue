@@ -61,6 +61,15 @@ const promos = [
     href: 'https://tudouai.cn/r/3n6bl5b'
   },
   {
+    key: 'minekuai',
+    flyFrom: '',
+    tag: '麦块云',
+    title: '邀请你注册麦块云：注册即送 10 鱼币',
+    desc: '签到领鱼币，兑换肥鱼会员即可调用 DeepSeek、GLM 大模型 API；一个账号还有云服务器、算力服务器。',
+    meta: '手机号 + 短信验证码注册 · 通过邀请注册额外送 10 鱼币',
+    href: 'https://minekuai.cn/r/A6YPDVZG'
+  },
+  {
     key: 'railway',
     flyFrom: '',
     tag: 'MOD',
@@ -195,6 +204,15 @@ onBeforeUnmount(restore)
 .promo-tudou .promo-tag {
   background: #fde68a;
   color: #92400e;
+}
+
+.promo-minekuai {
+  --promo-accent: #2563eb;
+}
+
+.promo-minekuai .promo-tag {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .promo-railway {
