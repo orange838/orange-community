@@ -1,6 +1,6 @@
 # CSL Personal Blog - Orange Community
 
-[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/github/license/orange838/orange-community?style=flat-square&logo=github&label=license&color=2f6f4e)](./LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-2f6f4e?style=flat-square&logo=github)](./LICENSE)
 
 Welcome to the **Orange Community** repository, the codebase for CSL's personal blog and community platform.
 

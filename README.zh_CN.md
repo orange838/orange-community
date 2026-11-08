@@ -1,6 +1,6 @@
 # CSL 个人博客 - 橙子社区
 
-[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/github/license/orange838/orange-community?style=flat-square&logo=github&label=license&color=2f6f4e)](./LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-2f6f4e?style=flat-square&logo=github)](./LICENSE)
 
 欢迎来到 **橙子社区** 仓库。本项目是 CSL 个人博客及社区平台的代码库。
 
