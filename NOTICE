@@ -102,7 +102,16 @@ attribution is a breach of this license.
 
 ---
 
-# Part 3 — Disclaimer of Liability
+# Part 3 — A Request, Not a Condition
+
+If you are an individual using this software for non-commercial purposes and you modify
+it, we would be glad to see your changes published — but you are **not obliged** to do
+so. Publishing them under this license is a request, not a condition of the license;
+failing to publish them is not a breach.
+
+---
+
+# Part 4 — Disclaimer of Liability
 
 To the maximum extent permitted by applicable law, this software is provided "as is",
 without warranties of any kind, express or implied, including but not limited to the
@@ -193,7 +202,12 @@ Required Notice: Copyright (c) 2026 CSL — Orange Community（橙子社区）
 仅在取得 1.2(b) 条书面商业授权，且该授权明确约定可以移除或替换署名时，
 方可移除或替换上述署名。其他任何情况下移除署名均属违约。
 
-## 第三部分：免责声明
+## 第三部分：一个请求，而非许可条件
+
+如果你是个人、出于非商业目的使用并修改了本软件，我们很希望（但**不要求**）你把改动
+公开回来。把修改以本许可公开是一个请求，不是许可条件；不公开也不构成违约。
+
+## 第四部分：免责声明
 
 在适用法律允许的最大范围内，本软件按「现状」提供，不附带任何明示或默示的保证，
 包括但不限于适销性、特定用途适用性与不侵权保证。版权持有人不对因使用本软件或

@@ -55,4 +55,8 @@ is unmodified, so the repository shows "PolyForm Noncommercial License 1.0.0" in
 - **Organizations** — schools, charities and government bodies are **not** granted
   blanket permission; what counts is the actual purpose of use.
 
+If you are an individual who modified the project, we would appreciate it if you publish
+your changes under the same license — but this is a request, **not** a condition of the
+license.
+
 Commercial licensing: admin@cslblog.dpdns.org
