@@ -35,10 +35,13 @@
 
 ## 许可协议与商业使用
 
-本项目采用 **橙子社区许可（Orange Community License）**：正文为
-[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) 官方原文，
-另附额外许可与署名条款，完整文本见 [`LICENSE`](./LICENSE)。它是「源码可见（fair source）」许可，
-不是 GPLv3 或 OSI 定义的开源许可证。
+本项目采用 **PolyForm Noncommercial License 1.0.0** 授权（[官方原文](https://polyformproject.org/licenses/noncommercial/1.0.0)，
+逐字未改地放在 [`LICENSE`](./LICENSE)），并附加额外许可与署名要求，条款见 [`NOTICE`](./NOTICE)。
+它是「源码可见（fair source）」许可，不是 GPLv3 或 OSI 定义的开源许可证。
+
+`LICENSE` 之所以保持原文不改，是因为 GitHub 只在文本未被改动时才认得出许可证名称——
+这样仓库会显示「PolyForm Noncommercial License 1.0.0」而不是「其他」。
+**`NOTICE` 里的附加条款同样是许可的一部分**，请一并阅读。
 
 - **非商业用途**：可自由使用、运行、修改、分发（含修改版），**不要求公开你的修改**，也不用付费。
 - **商业用途（二选一）**：① 把修改版以相同许可公开；② 取得书面商业授权。只有商业授权才可能允许去除署名。

@@ -35,17 +35,21 @@ This is a personal project. Suggestions and issue reports are welcome.
 
 ## License
 
-This project is licensed under the **Orange Community License**: the
-[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
-(verbatim) plus additional permissions and an attribution requirement, set out in
-[`LICENSE`](./LICENSE). It is a source-available (fair source) license, not an
-OSI-approved open-source license.
+This project is licensed under the **PolyForm Noncommercial License 1.0.0**
+([official text](https://polyformproject.org/licenses/noncommercial/1.0.0), reproduced
+verbatim in [`LICENSE`](./LICENSE)), plus additional permissions and an attribution
+requirement set out in [`NOTICE`](./NOTICE). It is a source-available (fair source)
+license, not an OSI-approved open-source license.
 
-- **Non-commercial use** — free to use, run, modify and distribute, including
-  modified versions, with **no obligation to publish your changes**.
-- **Commercial use** — two options: **(a)** publish your modified source under the
-  same license, or **(b)** obtain a written commercial license. Only a written
-  commercial license may allow removing the attribution.
+`LICENSE` is kept verbatim on purpose: GitHub only recognises the license when the text
+is unmodified, so the repository shows "PolyForm Noncommercial License 1.0.0" instead of
+"Other". **The additional terms in `NOTICE` are part of the license** — read both.
+
+- **Non-commercial use** — free to use, run, modify and distribute, including modified
+  versions, with **no obligation to publish your changes**.
+- **Commercial use** — two options: **(a)** publish your modified source under the same
+  license, or **(b)** obtain a written commercial license. Only a written commercial
+  license may allow removing the attribution.
 - **Attribution is mandatory** — keep the copyright notice and the visible
   "Powered by Orange Community" credit described in [`NOTICE`](./NOTICE).
 - **Organizations** — schools, charities and government bodies are **not** granted
