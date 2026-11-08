@@ -2,60 +2,172 @@ Orange Community（橙子社区）
 
 Copyright (c) 2026 CSL
 Required Notice: Copyright (c) 2026 CSL — Orange Community（橙子社区）
-仓库：https://github.com/orange838/orange-community
-商业授权联系：admin@cslblog.dpdns.org
+Repository: https://github.com/orange838/orange-community
+Commercial licensing: admin@cslblog.dpdns.org
 
-本软件以 PolyForm Noncommercial License 1.0.0 授权（官方原文见 LICENSE，未作修改）。
-本文件是随附于该许可的**附加条款**：版权持有人在此额外授予许可、并明示部分限制。
+This software is licensed under the **PolyForm Noncommercial License 1.0.0**
+(reproduced verbatim in [`LICENSE`](./LICENSE), unmodified).
 
-本文件与 LICENSE 是同一份许可的两个部分，任何分发都必须一并传递。
-如本文件与 LICENSE 存在不一致，就本项目的使用而言以本文件为准。
+This file contains **additional permissions and restrictions** that accompany that
+license: the copyright holder grants extra permissions here and expressly limits some
+of them.
+
+This file and `LICENSE` are two parts of the same license and must always be
+distributed together. Where this file and `LICENSE` differ, this file governs the use
+of this project.
 
 ---
 
-# 第一部分：额外许可与明示限制（Additional Permissions and Restrictions）
+# Part 1 — Additional Permissions and Restrictions
 
-## 1.1 非商业用途：自由使用
+## 1.1 Non-commercial use: free
 
-任何**非商业目的**的使用，均获得免费、不可撤销的许可，包括：
+Any **non-commercial** use is granted a free, irrevocable license, including:
 
-- 使用、运行、部署；
-- 修改、创作衍生作品；
-- 分发原件或修改版（含以修改版提供服务）。
+- use and deployment;
+- modification and creation of derivative works;
+- distribution of the original or modified versions (including offering a modified
+  version as a service).
 
-上述使用**不要求公开你的修改版源码**，不要求支付费用，但必须遵守第三部分署名要求，
-以及 LICENSE 中关于许可文本与 Required Notice 的传递义务。
+None of the above requires you to publish your modifications, and none of it requires
+payment, but you must comply with the attribution requirement in Part 2 and with the
+obligations in `LICENSE` regarding passing on the license text and the Required Notice.
+
+"Non-commercial" means use that is not directed toward commercial advantage or monetary
+compensation — for example personal study, research, hobby projects, teaching demos, and
+non-profit public showcases.
+
+## 1.2 Commercial use: two options
+
+Any **commercial** use — including, without limitation, embedding this software in a
+paid product or service, offering it as a paid hosted service, using it in the business
+of a for-profit organization, or monetizing it through traffic — is licensed only
+through one of the following two options:
+
+**(a) Publish your source.** Publish the modified version you distribute, deploy or
+otherwise make available (including all changes) under this same license (PolyForm
+Noncommercial License 1.0.0 + this Notice) and keep the attribution required by Part 2.
+Complying with this option grants you the commercial license at no charge.
+
+**(b) Obtain a commercial license.** Obtain a written commercial license from the
+copyright holder. Scope, fees, term, whether closed-source distribution is allowed, and
+whether attribution may be removed are all agreed separately.
+
+## 1.3 Commercial use that neither obtains a commercial license nor publishes its source
+under 1.2(a) is outside the scope of this license and infringes copyright.
+
+## 1.4 Express limitation on "Noncommercial Organizations"
+
+The permission granted to Noncommercial Organizations in `LICENSE` applies **only** to
+the non-commercial purposes defined in 1.1, and does not arise automatically from the
+nature of the entity (school, charity, research institute, government body, etc.).
+
+The test is the **actual purpose of use**, not the identity of the user: when such an
+organization uses this software for its commercial activities, paid projects or
+profit-oriented services, it must obtain a license under 1.2.
+
+## 1.5 Commercial licensing contact
+
+- Email: admin@cslblog.dpdns.org
+- GitHub: https://github.com/orange838/orange-community (issue or DM @orange838)
+- QQ group: https://qm.qq.com/q/J1lkB9JoWc
+
+Please state the entity, the intended use, whether it will be closed-source, and the
+expected scale.
+
+---
+
+# Part 2 — Attribution
+
+## 2.1 Attribution that must be preserved
+
+Whenever you copy, distribute, deploy or otherwise make this software (including
+modified versions) available to third parties, you must preserve:
+
+1. the copyright notice and the Required Notice lines at the top of this file, in the
+   source code and documentation;
+2. a user-visible credit. Websites and applications must show it in the footer or an
+   "About" page, for example:
+
+   `Powered by 橙子社区（Orange Community）— https://github.com/orange838/orange-community`
+
+   If the product form has no footer (CLI tools, libraries), the credit must appear in
+   the documentation, the `--help` output, or the package description.
+
+## 2.2 The only case in which attribution may be removed
+
+You may remove or replace the attribution only under a written commercial license
+obtained under 1.2(b) that expressly permits it. In every other case, removing the
+attribution is a breach of this license.
+
+---
+
+# Part 3 — Disclaimer of Liability
+
+To the maximum extent permitted by applicable law, this software is provided "as is",
+without warranties of any kind, express or implied, including but not limited to the
+warranties of merchantability, fitness for a particular purpose and non-infringement.
+The copyright holder shall not be liable for any claim, damages or other liability
+arising from the use of this software or this license.
+
+---
+---
+
+# 中文对照（与英文具有同等效力）
+
+Orange Community（橙子社区）
+
+Copyright (c) 2026 CSL
+Required Notice: Copyright (c) 2026 CSL — Orange Community（橙子社区）
+仓库：https://github.com/orange838/orange-community
+商业授权联系：admin@cslblog.dpdns.org
+
+本软件以 PolyForm Noncommercial License 1.0.0 授权（官方原文见 `LICENSE`，未作修改）。
+
+本文件是随附于该许可的**附加条款**：版权持有人在此额外授予许可、并明示部分限制。
+
+本文件与 `LICENSE` 是同一份许可的两个部分，任何分发都必须一并传递。
+如本文件与 `LICENSE` 存在不一致，就本项目的使用而言以本文件为准。
+
+## 第一部分：额外许可与明示限制
+
+### 1.1 非商业用途：自由使用
+
+任何**非商业目的**的使用，均获得免费、不可撤销的许可，包括：使用、运行、部署；
+修改、创作衍生作品；分发原件或修改版（含以修改版提供服务）。
+
+上述使用**不要求公开你的修改版源码**，不要求支付费用，但必须遵守第二部分署名要求，
+以及 `LICENSE` 中关于许可文本与 Required Notice 的传递义务。
 
 「非商业目的」指不以获取商业利益或金钱报酬为目的的使用，例如个人学习、研究、
 兴趣项目、教学演示、非营利的公益展示等。
 
-## 1.2 商业用途：二选一
+### 1.2 商业用途：二选一
 
 任何**商业目的**的使用（包括但不限于：集成进收费产品或服务、作为收费托管服务提供、
 在营利性组织的业务中使用、用于引流变现），仅可通过下列两种方式之一获得授权：
 
-**(a) 公开源码方案**
-将你分发、部署或对外提供的修改版（含全部改动）以本许可（PolyForm Noncommercial
-License 1.0.0 + 本附加条款）公开，并保留第三部分要求的署名。满足该条件即视为已获得
-商业使用许可，无需另行付费。
+**(a) 公开源码方案**：将你分发、部署或对外提供的修改版（含全部改动）以本许可
+（PolyForm Noncommercial License 1.0.0 + 本附加条款）公开，并保留第二部分要求的署名。
+满足该条件即视为已获得商业使用许可，无需另行付费。
 
-**(b) 商业授权方案**
-向版权持有人取得书面商业授权。授权范围、费用、期限、是否允许闭源、是否允许移除
-署名，由双方另行协商确定。
+**(b) 商业授权方案**：向版权持有人取得书面商业授权。授权范围、费用、期限、是否允许
+闭源、是否允许移除署名，由双方另行协商确定。
 
-## 1.3 未取得商业授权、也未按 1.2(a) 公开源码的商业使用，不在本许可授权范围内，
-属于对版权的侵犯。
+### 1.3
 
-## 1.4 关于「非商业组织」条款的明示限制
+未取得商业授权、也未按 1.2(a) 公开源码的商业使用，不在本许可授权范围内，属于对版权的侵犯。
 
-LICENSE 中「Noncommercial Organizations」一段所授予的许可，**仅在本文件 1.1 条定义的
+### 1.4 关于「非商业组织」条款的明示限制
+
+`LICENSE` 中「Noncommercial Organizations」一段所授予的许可，**仅在本文件 1.1 条定义的
 非商业用途范围内适用**，不因使用者的组织性质（学校、公益组织、研究机构、政府机构等）
 而自动成立。
 
 判断标准是**实际用途**而非主体身份：上述组织将本软件用于其商业性活动、收费项目、
 以营利为目的的服务时，仍须按 1.2 条取得授权。
 
-## 1.5 商业授权联系方式
+### 1.5 商业授权联系方式
 
 - 邮箱：admin@cslblog.dpdns.org
 - GitHub：https://github.com/orange838/orange-community（Issue 或私信 @orange838）
@@ -63,11 +175,9 @@ LICENSE 中「Noncommercial Organizations」一段所授予的许可，**仅在�
 
 正式授权请在联系时说明：使用主体、使用场景、是否闭源、预计规模。
 
----
+## 第二部分：署名
 
-# 第二部分：署名（Attribution）
-
-## 2.1 必须保留的署名
+### 2.1 必须保留的署名
 
 任何复制、分发、部署或以其他方式向第三方提供本软件（含修改版）时，都必须保留：
 
@@ -78,14 +188,12 @@ LICENSE 中「Noncommercial Organizations」一段所授予的许可，**仅在�
 
 若产品形态无法放置页脚（如命令行工具、库），须在文档、`--help` 输出或包描述中体现。
 
-## 2.2 唯一可以移除署名的情形
+### 2.2 唯一可以移除署名的情形
 
 仅在取得 1.2(b) 条书面商业授权，且该授权明确约定可以移除或替换署名时，
 方可移除或替换上述署名。其他任何情况下移除署名均属违约。
 
----
-
-# 第三部分：免责声明
+## 第三部分：免责声明
 
 在适用法律允许的最大范围内，本软件按「现状」提供，不附带任何明示或默示的保证，
 包括但不限于适销性、特定用途适用性与不侵权保证。版权持有人不对因使用本软件或
