@@ -1,6 +1,8 @@
 # CSL Personal Blog - Orange Community
 
-[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-2f6f4e?style=flat-square&logo=github)](./LICENSE)
+<p align="center">
+  <a href="./LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-2f6f4e?style=flat-square&logo=github"></a>
+</p>
 
 Welcome to the **Orange Community** repository, the codebase for CSL's personal blog and community platform.
 
